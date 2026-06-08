@@ -2,8 +2,14 @@ import { useState } from "react";
 
 export default function CitizenBooking() {
   const [step, setStep] = useState(1);
+
   const [appointmentType, setAppointmentType] = useState("");
   const [selectedOfficer, setSelectedOfficer] = useState("");
+  const [purpose, setPurpose] = useState("");
+
+  const [name, setName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [notes, setNotes] = useState("");
 
   const officers = [
     "CEO Madam",
@@ -11,6 +17,23 @@ export default function CitizenBooking() {
     "Education Officer",
     "Employment Officer",
   ];
+
+  const purposes = [
+    "Scholarship",
+    "Education",
+    "Employment",
+    "Certificate",
+    "Complaint",
+    "Other",
+  ];
+
+  const appointmentId =
+    "SHA-" + Math.floor(1000 + Math.random() * 9000);
+
+  const queuePosition =
+    Math.floor(Math.random() * 20) + 1;
+
+  const estimatedWait = queuePosition * 10;
 
   return (
     <div style={styles.container}>
@@ -21,6 +44,7 @@ export default function CitizenBooking() {
           Smart Appointment Management System
         </p>
 
+        {/* STEP 1 */}
         {step === 1 && (
           <>
             <h2 style={styles.heading}>
@@ -49,6 +73,7 @@ export default function CitizenBooking() {
           </>
         )}
 
+        {/* STEP 2 */}
         {step === 2 && (
           <>
             <button
@@ -58,7 +83,9 @@ export default function CitizenBooking() {
               ← Back
             </button>
 
-            <h2 style={styles.heading}>Select Officer</h2>
+            <h2 style={styles.heading}>
+              Select Officer
+            </h2>
 
             <div style={styles.infoBox}>
               Appointment Type:
@@ -73,19 +100,144 @@ export default function CitizenBooking() {
             {officers.map((officer) => (
               <button
                 key={officer}
-                style={styles.officerButton}
-                onClick={() => setSelectedOfficer(officer)}
+                style={styles.optionButton}
+                onClick={() => {
+                  setSelectedOfficer(officer);
+                  setStep(3);
+                }}
               >
                 {officer}
               </button>
             ))}
+          </>
+        )}
 
-            {selectedOfficer && (
-              <div style={styles.successBox}>
-                Selected Officer:
-                <strong> {selectedOfficer}</strong>
-              </div>
-            )}
+        {/* STEP 3 */}
+        {step === 3 && (
+          <>
+            <button
+              style={styles.backButton}
+              onClick={() => setStep(2)}
+            >
+              ← Back
+            </button>
+
+            <h2 style={styles.heading}>
+              Select Purpose
+            </h2>
+
+            {purposes.map((item) => (
+              <button
+                key={item}
+                style={styles.optionButton}
+                onClick={() => {
+                  setPurpose(item);
+                  setStep(4);
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </>
+        )}
+
+        {/* STEP 4 */}
+        {step === 4 && (
+          <>
+            <button
+              style={styles.backButton}
+              onClick={() => setStep(3)}
+            >
+              ← Back
+            </button>
+
+            <h2 style={styles.heading}>
+              Enter Details
+            </h2>
+
+            <input
+              type="text"
+              placeholder="Full Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={styles.input}
+            />
+
+            <input
+              type="text"
+              placeholder="Mobile Number"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              style={styles.input}
+            />
+
+            <textarea
+              placeholder="Additional Notes (Optional)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              style={styles.textarea}
+            />
+
+            <button
+              style={styles.primaryButton}
+              onClick={() => {
+                if (!name || !mobile) {
+                  alert("Please fill all required fields");
+                  return;
+                }
+
+                setStep(5);
+              }}
+            >
+              Confirm Appointment
+            </button>
+          </>
+        )}
+
+        {/* STEP 5 */}
+        {step === 5 && (
+          <>
+            <h2 style={styles.heading}>
+              🎉 Appointment Confirmed
+            </h2>
+
+            <div style={styles.successBox}>
+              <p>
+                <strong>Appointment ID:</strong>{" "}
+                {appointmentId}
+              </p>
+
+              <p>
+                <strong>Officer:</strong>{" "}
+                {selectedOfficer}
+              </p>
+
+              <p>
+                <strong>Purpose:</strong>{" "}
+                {purpose}
+              </p>
+
+              <p>
+                <strong>Name:</strong> {name}
+              </p>
+
+              <p>
+                <strong>Queue Position:</strong> #
+                {queuePosition}
+              </p>
+
+              <p>
+                <strong>Estimated Wait:</strong>{" "}
+                {estimatedWait} mins
+              </p>
+            </div>
+
+            <button
+              style={styles.primaryButton}
+              onClick={() => window.location.reload()}
+            >
+              Book Another Appointment
+            </button>
           </>
         )}
       </div>
@@ -157,7 +309,7 @@ const styles = {
     cursor: "pointer",
   },
 
-  officerButton: {
+  optionButton: {
     width: "100%",
     padding: "15px",
     marginBottom: "12px",
@@ -179,6 +331,26 @@ const styles = {
     marginBottom: "20px",
   },
 
+  input: {
+    width: "100%",
+    padding: "14px",
+    marginBottom: "12px",
+    borderRadius: "10px",
+    border: "1px solid #d1d5db",
+    fontSize: "15px",
+  },
+
+  textarea: {
+    width: "100%",
+    minHeight: "100px",
+    padding: "14px",
+    marginBottom: "15px",
+    borderRadius: "10px",
+    border: "1px solid #d1d5db",
+    fontSize: "15px",
+    resize: "vertical",
+  },
+
   infoBox: {
     padding: "12px",
     background: "#eef4ff",
@@ -188,11 +360,11 @@ const styles = {
   },
 
   successBox: {
-    marginTop: "20px",
-    padding: "14px",
     background: "#dcfce7",
-    borderRadius: "10px",
     color: "#166534",
-    textAlign: "center",
+    borderRadius: "12px",
+    padding: "20px",
+    marginBottom: "20px",
+    lineHeight: "1.8",
   },
 };
