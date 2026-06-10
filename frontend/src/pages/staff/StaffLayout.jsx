@@ -22,7 +22,8 @@ export default function StaffLayout() {
 
       <div
         style={{
-          flex: 1
+          flex: 1,
+          padding: "20px"
         }}
       >
         {active === "Dashboard" && <Dashboard />}

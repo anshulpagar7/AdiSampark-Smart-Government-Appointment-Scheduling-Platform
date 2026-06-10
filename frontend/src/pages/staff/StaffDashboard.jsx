@@ -1,29 +1,39 @@
-export default function Dashboard() {
+export default function StaffDashboard() {
   return (
     <div
       style={{
-        padding: "30px",
-        color: "white",
-        background: "#0F172A",
-        minHeight: "100vh"
+        minHeight: "100vh",
+        background: "#F8FAFC",
+        color: "#111827",
+        padding: "40px"
       }}
     >
-      <h1
+      {/* Header */}
+      <div
         style={{
-          marginBottom: "8px"
-        }}
-      >
-        Dashboard
-      </h1>
-
-      <p
-        style={{
-          color: "#94A3B8",
           marginBottom: "30px"
         }}
       >
-        Smart Appointment Management
-      </p>
+        <h1
+          style={{
+            fontSize: "42px",
+            marginBottom: "8px"
+          }}
+        >
+          Good Morning 👋
+        </h1>
+
+        <p
+          style={{
+            color: "#64748B",
+            fontSize: "18px"
+          }}
+        >
+          Welcome to Shabri Staff Portal
+        </p>
+      </div>
+
+      {/* KPI CARDS */}
 
       <div
         style={{
@@ -36,7 +46,7 @@ export default function Dashboard() {
         <StatCard
           title="Appointments Today"
           value="48"
-          color="#3B82F6"
+          color="#2563EB"
         />
 
         <StatCard
@@ -58,99 +68,144 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* QUEUE + EVENTS */}
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns:
-            "2fr 1fr",
+          gridTemplateColumns: "2fr 1fr",
           gap: "20px",
-          marginTop: "25px"
+          marginTop: "30px"
         }}
       >
+        {/* Queue Card */}
+
         <div style={card}>
-          <h2>Current Queue</h2>
+          <p
+            style={{
+              color: "#64748B",
+              marginBottom: "10px"
+            }}
+          >
+            CURRENT QUEUE
+          </p>
 
           <h1
             style={{
-              color: "#3B82F6"
+              fontSize: "64px",
+              color: "#2563EB",
+              margin: 0
             }}
           >
-            Token #12
+            #12
           </h1>
 
-          <p>
-            Currently Serving:
-            <strong>
-              {" "}Rahul Sharma
-            </strong>
-          </p>
+          <div
+            style={{
+              marginTop: "20px"
+            }}
+          >
+            <p>
+              Currently Serving:
+              <strong>
+                {" "}Rahul Sharma
+              </strong>
+            </p>
 
-          <p>
-            Waiting Visitors:
-            <strong>
-              {" "}18
-            </strong>
-          </p>
+            <p>
+              Waiting Visitors:
+              <strong>
+                {" "}18
+              </strong>
+            </p>
+          </div>
         </div>
+
+        {/* Events */}
 
         <div style={card}>
           <h2>Upcoming Events</h2>
 
-          <p>
-            Scholarship Camp
-          </p>
+          <EventCard
+            title="Scholarship Camp"
+            date="12 June 2026"
+          />
 
-          <p>
-            Tribal Welfare Drive
-          </p>
+          <EventCard
+            title="Tribal Welfare Drive"
+            date="18 June 2026"
+          />
 
-          <p>
-            Education Workshop
-          </p>
+          <EventCard
+            title="Education Workshop"
+            date="22 June 2026"
+          />
         </div>
       </div>
+
+      {/* TODAY'S APPOINTMENTS */}
 
       <div
         style={{
           ...card,
-          marginTop: "25px"
+          marginTop: "30px"
         }}
       >
-        <h2>
+        <h2
+          style={{
+            marginBottom: "20px"
+          }}
+        >
           Today's Appointments
         </h2>
 
         <table
           style={{
             width: "100%",
-            marginTop: "20px"
+            borderCollapse: "collapse"
           }}
         >
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Time</th>
-              <th>Status</th>
+              <th style={th}>Name</th>
+              <th style={th}>Purpose</th>
+              <th style={th}>Time</th>
+              <th style={th}>Status</th>
             </tr>
           </thead>
 
           <tbody>
             <tr>
-              <td>Rahul Sharma</td>
-              <td>09:00 AM</td>
-              <td>Approved</td>
+              <td style={td}>Rahul Sharma</td>
+              <td style={td}>Scholarship</td>
+              <td style={td}>09:00 AM</td>
+              <td style={td}>
+                <Status color="#2563EB">
+                  Approved
+                </Status>
+              </td>
             </tr>
 
             <tr>
-              <td>Priya Patil</td>
-              <td>09:10 AM</td>
-              <td>Waiting</td>
+              <td style={td}>Priya Patil</td>
+              <td style={td}>Certificate</td>
+              <td style={td}>09:10 AM</td>
+              <td style={td}>
+                <Status color="#F59E0B">
+                  Waiting
+                </Status>
+              </td>
             </tr>
 
             <tr>
-              <td>Amit Kumar</td>
-              <td>09:20 AM</td>
-              <td>Completed</td>
+              <td style={td}>Amit Kumar</td>
+              <td style={td}>Employment</td>
+              <td style={td}>09:20 AM</td>
+              <td style={td}>
+                <Status color="#22C55E">
+                  Completed
+                </Status>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -167,28 +222,94 @@ function StatCard({
   return (
     <div
       style={{
-        background: "#1E293B",
-        padding: "24px",
-        borderRadius: "16px",
-        borderLeft:
-          `5px solid ${color}`
+        background: "white",
+        borderRadius: "20px",
+        padding: "25px",
+        boxShadow:
+          "0 10px 30px rgba(0,0,0,0.08)",
+        borderTop: `5px solid ${color}`
       }}
     >
       <p
         style={{
-          color: "#94A3B8"
+          color: "#64748B"
         }}
       >
         {title}
       </p>
 
-      <h1>{value}</h1>
+      <h1
+        style={{
+          margin: 0
+        }}
+      >
+        {value}
+      </h1>
     </div>
   );
 }
 
+function EventCard({
+  title,
+  date
+}) {
+  return (
+    <div
+      style={{
+        background: "#F8FAFC",
+        padding: "12px",
+        borderRadius: "12px",
+        marginBottom: "10px"
+      }}
+    >
+      <strong>{title}</strong>
+
+      <p
+        style={{
+          margin: "5px 0 0",
+          color: "#64748B"
+        }}
+      >
+        {date}
+      </p>
+    </div>
+  );
+}
+
+function Status({
+  children,
+  color
+}) {
+  return (
+    <span
+      style={{
+        background: color,
+        color: "white",
+        padding: "6px 12px",
+        borderRadius: "20px",
+        fontSize: "14px"
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 const card = {
-  background: "#1E293B",
-  padding: "24px",
-  borderRadius: "16px"
+  background: "white",
+  borderRadius: "20px",
+  padding: "25px",
+  boxShadow:
+    "0 10px 30px rgba(0,0,0,0.08)"
+};
+
+const th = {
+  textAlign: "left",
+  paddingBottom: "15px",
+  borderBottom: "1px solid #E2E8F0"
+};
+
+const td = {
+  padding: "15px 0",
+  borderBottom: "1px solid #F1F5F9"
 };

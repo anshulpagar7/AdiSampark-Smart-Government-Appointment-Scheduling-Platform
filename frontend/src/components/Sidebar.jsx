@@ -15,7 +15,7 @@ export default function Sidebar({
   return (
     <div
       style={{
-        width: "260px",
+        width: "220px",
         background: "#111827",
         color: "white",
         minHeight: "100vh",
