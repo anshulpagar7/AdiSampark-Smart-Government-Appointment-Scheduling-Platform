@@ -3,8 +3,7 @@ import { useState } from "react";
 import CitizenBooking from "./pages/CitizenBooking";
 
 import StaffLogin from "./pages/staff/StaffLogin";
-import StaffDashboard from "./pages/staff/StaffDashboard";
-import Appointments from "./pages/staff/Appointments";
+import StaffLayout from "./pages/staff/StaffLayout";
 
 function App() {
   const [page, setPage] = useState("citizen");
@@ -28,11 +27,7 @@ function App() {
         </button>
 
         <button onClick={() => setPage("staff-dashboard")}>
-          Staff Dashboard
-        </button>
-
-        <button onClick={() => setPage("appointments")}>
-          Appointments
+          Staff Portal
         </button>
       </div>
 
@@ -40,13 +35,7 @@ function App() {
 
       {page === "staff-login" && <StaffLogin />}
 
-      {page === "staff-dashboard" && (
-        <StaffDashboard />
-      )}
-
-      {page === "appointments" && (
-        <Appointments />
-      )}
+      {page === "staff-dashboard" && <StaffLayout />}
     </div>
   );
 }
