@@ -1,18 +1,24 @@
 import { useState } from "react";
 
 import Sidebar from "../../components/Sidebar";
-import Dashboard from "./StaffDashboard";
+
+import StaffDashboard from "./StaffDashboard";
 import Appointments from "./Appointments";
+import ScheduleAppointment from "./ScheduleAppointment";
+import HolidayManagement from "./HolidayManagement";
+import Events from "./Events";
+import Reports from "./Reports";
 
 export default function StaffLayout() {
-  const [active, setActive] = useState("Dashboard");
+  const [active, setActive] =
+    useState("Dashboard");
 
   return (
     <div
       style={{
         display: "flex",
         minHeight: "100vh",
-        background: "#0F172A"
+        background: "#F8FAFC",
       }}
     >
       <Sidebar
@@ -23,55 +29,96 @@ export default function StaffLayout() {
       <div
         style={{
           flex: 1,
-          padding: "20px"
+          overflowY: "auto",
         }}
       >
-        {active === "Dashboard" && <Dashboard />}
+        {active === "Dashboard" && (
+          <StaffDashboard />
+        )}
 
         {active === "Appointments" && (
           <Appointments />
         )}
 
         {active === "Schedule" && (
-          <Placeholder
-            title="Schedule Appointment"
-          />
+          <ScheduleAppointment />
         )}
 
         {active === "Holidays" && (
-          <Placeholder
-            title="Holiday Management"
-          />
+          <HolidayManagement />
         )}
 
         {active === "Events" && (
-          <Placeholder
-            title="Events Management"
-          />
+          <Events />
         )}
 
         {active === "Reports" && (
-          <Placeholder title="Reports" />
+          <Reports />
         )}
 
         {active === "Settings" && (
-          <Placeholder title="Settings" />
+          <div
+            style={{
+              padding: "40px",
+            }}
+          >
+            <h1>Settings</h1>
+
+            <div
+              style={{
+                background: "white",
+                padding: "25px",
+                borderRadius: "20px",
+                marginTop: "20px",
+                boxShadow:
+                  "0 10px 30px rgba(0,0,0,0.08)",
+              }}
+            >
+              <h2>
+                System Settings
+              </h2>
+
+              <p>
+                Working Hours:
+                09:00 AM - 05:00 PM
+              </p>
+
+              <p>
+                Lunch Break:
+                01:00 PM - 02:00 PM
+              </p>
+
+              <p>
+                WhatsApp Notifications:
+                Enabled
+              </p>
+
+              <p>
+                SMS Notifications:
+                Enabled
+              </p>
+
+              <button
+                style={{
+                  marginTop: "20px",
+                  background:
+                    "#2563EB",
+                  color: "white",
+                  border: "none",
+                  padding:
+                    "12px 20px",
+                  borderRadius:
+                    "12px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Placeholder({ title }) {
-  return (
-    <div
-      style={{
-        color: "white",
-        padding: "40px"
-      }}
-    >
-      <h1>{title}</h1>
-      <p>Coming Soon...</p>
     </div>
   );
 }
