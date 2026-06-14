@@ -1,43 +1,21 @@
-import React from "react";
+export default function MDDashboard() {
+  const meetings = [
+    {
+      title: "Head Office Review Meeting",
+      with: "Tribal Development Head Office",
+      time: "2:00 PM",
+      status: "Upcoming",
+      mode: "Google Meet",
+    },
+    {
+      title: "Regional Officer Discussion",
+      with: "Regional Office",
+      time: "4:00 PM",
+      status: "Upcoming",
+      mode: "Google Meet",
+    },
+  ];
 
-// FIXED: Moved styles to the top to prevent "Cannot access before initialization" runtime error
-const card = {
-  background: "white",
-  borderRadius: "24px",
-  padding: "25px",
-  boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-};
-
-const th = {
-  textAlign: "left",
-  paddingBottom: "15px",
-  color: "#475569",
-};
-
-const td = {
-  padding: "14px 0",
-  borderBottom: "1px solid #E2E8F0",
-};
-
-const greenBtn = {
-  background: "#10B981",
-  color: "white",
-  border: "none",
-  padding: "12px 18px",
-  borderRadius: "12px",
-  cursor: "pointer",
-};
-
-const blueBtn = {
-  background: "#2563EB",
-  color: "white",
-  border: "none",
-  padding: "12px 18px",
-  borderRadius: "12px",
-  cursor: "pointer",
-};
-
-export default function MDDashboard({ setActive }) {
   const upcomingCitizens = [
     {
       token: "SHA-1002",
@@ -59,19 +37,6 @@ export default function MDDashboard({ setActive }) {
     },
   ];
 
-  const meetings = [
-    {
-      title: "Head Office Review",
-      time: "2:00 PM",
-      mode: "Google Meet",
-    },
-    {
-      title: "Regional Officer Discussion",
-      time: "4:00 PM",
-      mode: "Google Meet",
-    },
-  ];
-
   return (
     <div
       style={{
@@ -81,6 +46,7 @@ export default function MDDashboard({ setActive }) {
       }}
     >
       {/* Header */}
+
       <div style={{ marginBottom: "30px" }}>
         <h1
           style={{
@@ -91,43 +57,55 @@ export default function MDDashboard({ setActive }) {
         >
           Good Morning, Madam 🌿
         </h1>
-        <p style={{ color: "#64748B", fontSize: "18px" }}>
+
+        <p
+          style={{
+            color: "#64748B",
+            fontSize: "18px",
+          }}
+        >
           Managing Director Dashboard
         </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Statistics */}
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(220px,1fr))",
           gap: "20px",
-          marginBottom: "30px",
+          marginBottom: "25px",
         }}
       >
         <StatCard
           title="Today's Citizens"
           value="18"
-          gradient="linear-gradient(135deg,#3B82F6,#2563EB)"
+          color="linear-gradient(135deg,#3B82F6,#2563EB)"
         />
+
         <StatCard
           title="Waiting"
           value="4"
-          gradient="linear-gradient(135deg,#F59E0B,#D97706)"
+          color="linear-gradient(135deg,#F59E0B,#D97706)"
         />
+
         <StatCard
           title="Meetings"
           value="3"
-          gradient="linear-gradient(135deg,#10B981,#059669)"
+          color="linear-gradient(135deg,#10B981,#059669)"
         />
+
         <StatCard
           title="Completed"
           value="12"
-          gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)"
+          color="linear-gradient(135deg,#8B5CF6,#7C3AED)"
         />
       </div>
 
-      {/* Main Grid */}
+      {/* Main Section */}
+
       <div
         style={{
           display: "grid",
@@ -137,6 +115,7 @@ export default function MDDashboard({ setActive }) {
         }}
       >
         {/* Current Citizen */}
+
         <div style={card}>
           <div
             style={{
@@ -145,70 +124,146 @@ export default function MDDashboard({ setActive }) {
               marginBottom: "15px",
             }}
           >
-            CURRENT CITIZEN
+            CURRENTLY MEETING
           </div>
-          <h2 style={{ fontSize: "32px", marginBottom: "10px" }}>
+
+          <h2
+            style={{
+              fontSize: "34px",
+            }}
+          >
             Rahul Sharma
           </h2>
+
           <div
             style={{
-              fontSize: "54px",
+              fontSize: "60px",
               fontWeight: "700",
               color: "#2563EB",
+              margin: "10px 0",
             }}
           >
             #1001
           </div>
+
           <p>
             <strong>Purpose:</strong> Scholarship Query
           </p>
+
           <p>
             <strong>Time:</strong> 11:00 AM
           </p>
-          <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-            <button style={greenBtn}>Start Meeting</button>
-            <button style={blueBtn}>Complete</button>
-          </div>
+
+          <button
+            style={{
+              marginTop: "20px",
+              background: "#10B981",
+              color: "white",
+              border: "none",
+              padding: "12px 18px",
+              borderRadius: "12px",
+              cursor: "pointer",
+            }}
+          >
+            Meeting Active
+          </button>
         </div>
 
-        {/* Meetings */}
+        {/* Today's Focus */}
+
         <div style={card}>
-          <h2 style={{ marginBottom: "20px" }}>Today's Meetings</h2>
-          {meetings.map((meeting, index) => (
-            <div
-              key={index}
-              style={{
-                background: "#F1F5F9",
-                padding: "16px",
-                borderRadius: "14px",
-                marginBottom: "15px",
-              }}
-            >
-              <h3>{meeting.title}</h3>
-              <p>{meeting.time}</p>
-              <p>{meeting.mode}</p>
-              <button
-                style={{
-                  marginTop: "10px",
-                  background: "#10B981",
-                  color: "white",
-                  border: "none",
-                  padding: "10px 16px",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                }}
-              >
-                Join Meeting
-              </button>
-            </div>
-          ))}
+          <h2>Today's Focus</h2>
+
+          <div style={{ marginTop: "20px" }}>
+            <FocusItem
+              title="Citizens Waiting"
+              value="4"
+            />
+
+            <FocusItem
+              title="Executive Meetings"
+              value="3"
+            />
+
+            <FocusItem
+              title="Pending Actions"
+              value="2"
+            />
+          </div>
         </div>
       </div>
 
+      {/* Executive Meetings */}
+
+      <div
+        style={{
+          ...card,
+          marginBottom: "25px",
+        }}
+      >
+        <h2
+          style={{
+            marginBottom: "20px",
+          }}
+        >
+          Executive Meetings
+        </h2>
+
+        {meetings.map((meeting, index) => (
+          <div
+            key={index}
+            style={{
+              background: "#F1F5F9",
+              borderRadius: "14px",
+              padding: "18px",
+              marginBottom: "15px",
+            }}
+          >
+            <h3>{meeting.title}</h3>
+
+            <p>
+              <strong>Meeting With:</strong>{" "}
+              {meeting.with}
+            </p>
+
+            <p>
+              <strong>Time:</strong>{" "}
+              {meeting.time}
+            </p>
+
+            <p>
+              <strong>Mode:</strong>{" "}
+              {meeting.mode}
+            </p>
+
+            <p>
+              <strong>Status:</strong>{" "}
+              {meeting.status}
+            </p>
+
+            <button style={joinBtn}>
+              Join Meeting
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Upcoming Citizens */}
+
       <div style={card}>
-        <h2 style={{ marginBottom: "20px" }}>Upcoming Citizens</h2>
-        <table style={{ width: "100%" }}>
+        <h2
+          style={{
+            marginBottom: "20px",
+          }}
+        >
+          Upcoming Citizens
+        </h2>
+
+        <table
+          style={{
+            width: "100%",
+          }}
+        >
           <thead>
             <tr>
               <th style={th}>Token</th>
@@ -217,56 +272,113 @@ export default function MDDashboard({ setActive }) {
               <th style={th}>Time</th>
             </tr>
           </thead>
+
           <tbody>
-            {upcomingCitizens.map((citizen, index) => (
-              <tr key={index}>
-                <td style={td}>{citizen.token}</td>
-                <td style={td}>{citizen.name}</td>
-                <td style={td}>{citizen.purpose}</td>
-                <td style={td}>{citizen.time}</td>
-              </tr>
-            ))}
+            {upcomingCitizens.map(
+              (citizen, index) => (
+                <tr key={index}>
+                  <td style={td}>
+                    {citizen.token}
+                  </td>
+
+                  <td style={td}>
+                    {citizen.name}
+                  </td>
+
+                  <td style={td}>
+                    {citizen.purpose}
+                  </td>
+
+                  <td style={td}>
+                    {citizen.time}
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       </div>
-
-      {/* Floating Button */}
-      <button
-        onClick={() => setActive("Schedule Meeting")}
-        style={{
-          position: "fixed",
-          right: "35px",
-          bottom: "35px",
-          background: "linear-gradient(135deg,#10B981,#059669)",
-          color: "white",
-          border: "none",
-          padding: "18px 28px",
-          borderRadius: "999px",
-          fontWeight: "600",
-          fontSize: "16px",
-          cursor: "pointer",
-          boxShadow: "0 12px 25px rgba(16,185,129,0.35)",
-        }}
-      >
-        + Schedule Meeting
-      </button>
     </div>
   );
 }
 
-function StatCard({ title, value, gradient }) {
+function StatCard({
+  title,
+  value,
+  color,
+}) {
   return (
     <div
       style={{
-        background: gradient,
+        background: color,
         color: "white",
-        padding: "25px",
+        padding: "24px",
         borderRadius: "22px",
-        boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
+        boxShadow:
+          "0 10px 25px rgba(0,0,0,0.1)",
       }}
     >
-      {title}
-      <h1 style={{ fontSize: "42px", marginTop: "10px" }}>{value}</h1>
+      <p>{title}</p>
+
+      <h1
+        style={{
+          fontSize: "42px",
+          marginTop: "10px",
+        }}
+      >
+        {value}
+      </h1>
     </div>
   );
 }
+
+function FocusItem({
+  title,
+  value,
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent:
+          "space-between",
+        padding: "14px 0",
+        borderBottom:
+          "1px solid #E2E8F0",
+      }}
+    >
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+const card = {
+  background: "white",
+  borderRadius: "24px",
+  padding: "25px",
+  boxShadow:
+    "0 10px 30px rgba(0,0,0,0.08)",
+};
+
+const th = {
+  textAlign: "left",
+  paddingBottom: "15px",
+  color: "#475569",
+};
+
+const td = {
+  padding: "14px 0",
+  borderBottom:
+    "1px solid #E2E8F0",
+};
+
+const joinBtn = {
+  background: "#10B981",
+  color: "white",
+  border: "none",
+  padding: "10px 16px",
+  borderRadius: "10px",
+  cursor: "pointer",
+  marginTop: "10px",
+};

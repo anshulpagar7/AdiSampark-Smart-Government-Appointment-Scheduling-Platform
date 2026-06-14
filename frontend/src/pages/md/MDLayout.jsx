@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 import MDDashboard from "./MDDashboard";
-import ScheduleMeeting from "./ScheduleMeeting";
 
 export default function MDLayout() {
   const [active, setActive] = useState("Dashboard");
@@ -11,11 +10,6 @@ export default function MDLayout() {
       case "Dashboard":
         return (
           <MDDashboard setActive={setActive} />
-        );
-
-      case "Schedule Meeting":
-        return (
-          <ScheduleMeeting setActive={setActive} />
         );
 
       default:
@@ -36,21 +30,25 @@ export default function MDLayout() {
       {/* Sidebar */}
       <div
         style={{
-          width: "280px",
+          width: "300px",
           background:
             "linear-gradient(180deg,#064E3B,#022C22)",
           color: "white",
           padding: "30px 20px",
           display: "flex",
           flexDirection: "column",
+          boxShadow:
+            "4px 0 20px rgba(0,0,0,0.08)",
         }}
       >
+        {/* Logo Area */}
         <div>
           <h1
             style={{
-              fontSize: "36px",
-              marginBottom: "6px",
+              fontSize: "34px",
+              fontWeight: "700",
               color: "#6EE7B7",
+              marginBottom: "6px",
             }}
           >
             MD Portal
@@ -63,9 +61,7 @@ export default function MDLayout() {
               lineHeight: "1.6",
             }}
           >
-            Managing Director
-            <br />
-            Dashboard
+            Managing Director Dashboard
           </p>
         </div>
 
@@ -90,37 +86,30 @@ export default function MDLayout() {
           >
             📊 Dashboard
           </button>
-
-          <button
-            onClick={() =>
-              setActive("Schedule Meeting")
-            }
-            style={{
-              ...menuButton,
-              background:
-                active === "Schedule Meeting"
-                  ? "#10B981"
-                  : "transparent",
-            }}
-          >
-            📅 Schedule Meeting
-          </button>
         </div>
 
         {/* Footer */}
         <div
           style={{
             marginTop: "auto",
-            color: "#A7F3D0",
-            fontSize: "13px",
-            lineHeight: "1.6",
+            paddingTop: "30px",
+            borderTop:
+              "1px solid rgba(255,255,255,0.15)",
           }}
         >
-          Maharashtra State
-          <br />
-          Cooperative Tribal
-          <br />
-          Development Corporation Ltd.
+          <div
+            style={{
+              fontSize: "13px",
+              color: "#A7F3D0",
+              lineHeight: "1.6",
+            }}
+          >
+            Maharashtra State
+            <br />
+            Cooperative Tribal
+            <br />
+            Development Corporation Ltd.
+          </div>
         </div>
       </div>
 
@@ -140,7 +129,7 @@ export default function MDLayout() {
 const menuButton = {
   color: "white",
   border: "none",
-  padding: "14px 18px",
+  padding: "16px 18px",
   borderRadius: "14px",
   cursor: "pointer",
   textAlign: "left",
