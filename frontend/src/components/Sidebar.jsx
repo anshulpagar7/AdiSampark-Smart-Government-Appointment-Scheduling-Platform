@@ -2,15 +2,17 @@ export default function Sidebar({
   active,
   setActive
 }) {
-  const menuItems = [
-    "Dashboard",
-    "Appointments",
-    "Schedule",
-    "Holidays",
-    "Events",
-    "Reports",
-    "Settings"
-  ];
+ const menuItems = [
+  "Dashboard",
+  "Appointments",
+  "Queue",
+  "Schedule",
+  "Holidays",
+  "Events",
+  "Reports",
+  "Notifications",
+  "Settings",
+];
 
   return (
     <div
