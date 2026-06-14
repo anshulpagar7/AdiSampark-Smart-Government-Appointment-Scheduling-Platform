@@ -1,17 +1,17 @@
+import tribalLogo from "../../assets/tribal-logo.jpg";
+
 export default function MDDashboard() {
-  const meetings = [
+  const executiveMeetings = [
     {
-      title: "Head Office Review Meeting",
+      title: "Head Office Review",
       with: "Tribal Development Head Office",
       time: "2:00 PM",
-      status: "Upcoming",
       mode: "Google Meet",
     },
     {
-      title: "Regional Officer Discussion",
+      title: "Regional Officer Review",
       with: "Regional Office",
       time: "4:00 PM",
-      status: "Upcoming",
       mode: "Google Meet",
     },
   ];
@@ -40,289 +40,355 @@ export default function MDDashboard() {
   return (
     <div
       style={{
-        background: "#F8FAFC",
         minHeight: "100vh",
-        padding: "35px",
+        background: "#F8FAFC",
       }}
     >
       {/* Header */}
 
-      <div style={{ marginBottom: "30px" }}>
-        <h1
-          style={{
-            fontSize: "42px",
-            color: "#0F172A",
-            marginBottom: "8px",
-          }}
-        >
-          Good Morning, Madam 🌿
-        </h1>
-
-        <p
-          style={{
-            color: "#64748B",
-            fontSize: "18px",
-          }}
-        >
-          Managing Director Dashboard
-        </p>
-      </div>
-
-      {/* Statistics */}
-
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit,minmax(220px,1fr))",
+          background: "white",
+          padding: "20px 30px",
+          borderBottom: "1px solid #E5E7EB",
+          display: "flex",
+          alignItems: "center",
           gap: "20px",
-          marginBottom: "25px",
         }}
       >
-        <StatCard
-          title="Today's Citizens"
-          value="18"
-          color="linear-gradient(135deg,#3B82F6,#2563EB)"
+        <img
+          src={tribalLogo}
+          alt="Logo"
+          style={{
+            width: "75px",
+            height: "75px",
+            objectFit: "contain",
+          }}
         />
 
-        <StatCard
-          title="Waiting"
-          value="4"
-          color="linear-gradient(135deg,#F59E0B,#D97706)"
-        />
-
-        <StatCard
-          title="Meetings"
-          value="3"
-          color="linear-gradient(135deg,#10B981,#059669)"
-        />
-
-        <StatCard
-          title="Completed"
-          value="12"
-          color="linear-gradient(135deg,#8B5CF6,#7C3AED)"
-        />
-      </div>
-
-      {/* Main Section */}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr",
-          gap: "25px",
-          marginBottom: "25px",
-        }}
-      >
-        {/* Current Citizen */}
-
-        <div style={card}>
-          <div
-            style={{
-              color: "#2563EB",
-              fontWeight: "700",
-              marginBottom: "15px",
-            }}
-          >
-            CURRENTLY MEETING
-          </div>
-
+        <div>
           <h2
             style={{
-              fontSize: "34px",
+              margin: 0,
+              color: "#111827",
             }}
           >
-            Rahul Sharma
+            Maharashtra State Cooperative Tribal Development Corporation Limited
+          </h2>
+
+          <p
+            style={{
+              marginTop: "6px",
+              color: "#64748B",
+            }}
+          >
+            Managing Director Dashboard
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "35px",
+        }}
+      >
+        {/* Welcome */}
+
+        <div
+          style={{
+            marginBottom: "30px",
+          }}
+        >
+          <h1
+            style={{
+              fontSize: "48px",
+              marginBottom: "10px",
+              color: "#0F172A",
+            }}
+          >
+            Good Morning, Madam 🌿
+          </h1>
+
+          <p
+            style={{
+              color: "#64748B",
+              fontSize: "18px",
+            }}
+          >
+            Executive Monitoring Dashboard
+          </p>
+        </div>
+
+        {/* Stats */}
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4,1fr)",
+            gap: "20px",
+            marginBottom: "30px",
+          }}
+        >
+          <StatCard
+            title="Today's Citizens"
+            value="18"
+            gradient="linear-gradient(135deg,#3B82F6,#2563EB)"
+          />
+
+          <StatCard
+            title="Waiting"
+            value="4"
+            gradient="linear-gradient(135deg,#F59E0B,#D97706)"
+          />
+
+          <StatCard
+            title="Meetings"
+            value="3"
+            gradient="linear-gradient(135deg,#10B981,#059669)"
+          />
+
+          <StatCard
+            title="Completed"
+            value="12"
+            gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)"
+          />
+        </div>
+
+        {/* Current + Next Citizen */}
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "20px",
+            marginBottom: "25px",
+          }}
+        >
+          <div style={card}>
+            <h3
+              style={{
+                color: "#2563EB",
+                marginBottom: "20px",
+              }}
+            >
+              CURRENTLY MEETING
+            </h3>
+
+            <h1
+              style={{
+                marginBottom: "10px",
+              }}
+            >
+              Rahul Sharma
+            </h1>
+
+            <h1
+              style={{
+                fontSize: "60px",
+                color: "#2563EB",
+                marginBottom: "15px",
+              }}
+            >
+              #1001
+            </h1>
+
+            <p>
+              <strong>Purpose:</strong> Scholarship Query
+            </p>
+
+            <p>
+              <strong>Time:</strong> 11:00 AM
+            </p>
+          </div>
+
+          <div style={card}>
+            <h3
+              style={{
+                color: "#10B981",
+                marginBottom: "20px",
+              }}
+            >
+              NEXT CITIZEN
+            </h3>
+
+            <h1
+              style={{
+                marginBottom: "10px",
+              }}
+            >
+              Priya Patil
+            </h1>
+
+            <h1
+              style={{
+                fontSize: "60px",
+                color: "#10B981",
+                marginBottom: "15px",
+              }}
+            >
+              #1002
+            </h1>
+
+            <p>
+              <strong>Purpose:</strong> Education Support
+            </p>
+
+            <p>
+              <strong>Time:</strong> 11:10 AM
+            </p>
+          </div>
+        </div>
+
+        {/* Executive Meetings */}
+
+        <div
+          style={{
+            ...card,
+            marginBottom: "25px",
+          }}
+        >
+          <h2
+            style={{
+              marginBottom: "20px",
+            }}
+          >
+            Executive Meetings
           </h2>
 
           <div
             style={{
-              fontSize: "60px",
-              fontWeight: "700",
-              color: "#2563EB",
-              margin: "10px 0",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "20px",
             }}
           >
-            #1001
-          </div>
+            {executiveMeetings.map((meeting, index) => (
+              <div
+                key={index}
+                style={{
+                  background: "#F1F5F9",
+                  padding: "20px",
+                  borderRadius: "16px",
+                }}
+              >
+                <h3>{meeting.title}</h3>
 
-          <p>
-            <strong>Purpose:</strong> Scholarship Query
-          </p>
+                <p>
+                  <strong>Meeting With:</strong> {meeting.with}
+                </p>
 
-          <p>
-            <strong>Time:</strong> 11:00 AM
-          </p>
+                <p>
+                  <strong>Time:</strong> {meeting.time}
+                </p>
 
-          <button
-            style={{
-              marginTop: "20px",
-              background: "#10B981",
-              color: "white",
-              border: "none",
-              padding: "12px 18px",
-              borderRadius: "12px",
-              cursor: "pointer",
-            }}
-          >
-            Meeting Active
-          </button>
-        </div>
+                <p>
+                  <strong>Mode:</strong> {meeting.mode}
+                </p>
 
-        {/* Today's Focus */}
-
-        <div style={card}>
-          <h2>Today's Focus</h2>
-
-          <div style={{ marginTop: "20px" }}>
-            <FocusItem
-              title="Citizens Waiting"
-              value="4"
-            />
-
-            <FocusItem
-              title="Executive Meetings"
-              value="3"
-            />
-
-            <FocusItem
-              title="Pending Actions"
-              value="2"
-            />
+                <button
+                  style={{
+                    background: "#10B981",
+                    color: "white",
+                    border: "none",
+                    padding: "10px 18px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Join Meeting
+                </button>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
 
-      {/* Executive Meetings */}
+        {/* Focus + Upcoming */}
 
-      <div
-        style={{
-          ...card,
-          marginBottom: "25px",
-        }}
-      >
-        <h2
+        <div
           style={{
-            marginBottom: "20px",
+            display: "grid",
+            gridTemplateColumns: "350px 1fr",
+            gap: "20px",
           }}
         >
-          Executive Meetings
-        </h2>
+          <div style={card}>
+            <h2>Today's Focus</h2>
 
-        {meetings.map((meeting, index) => (
-          <div
-            key={index}
-            style={{
-              background: "#F1F5F9",
-              borderRadius: "14px",
-              padding: "18px",
-              marginBottom: "15px",
-            }}
-          >
-            <h3>{meeting.title}</h3>
+            <div
+              style={{
+                marginTop: "25px",
+              }}
+            >
+              <FocusItem title="Citizens Waiting" value="4" />
 
-            <p>
-              <strong>Meeting With:</strong>{" "}
-              {meeting.with}
-            </p>
+              <FocusItem title="Meetings Today" value="3" />
 
-            <p>
-              <strong>Time:</strong>{" "}
-              {meeting.time}
-            </p>
-
-            <p>
-              <strong>Mode:</strong>{" "}
-              {meeting.mode}
-            </p>
-
-            <p>
-              <strong>Status:</strong>{" "}
-              {meeting.status}
-            </p>
-
-            <button style={joinBtn}>
-              Join Meeting
-            </button>
+              <FocusItem title="Completed Citizens" value="12" />
+            </div>
           </div>
-        ))}
-      </div>
 
-      {/* Upcoming Citizens */}
+          <div style={card}>
+            <h2
+              style={{
+                marginBottom: "20px",
+              }}
+            >
+              Upcoming Citizens
+            </h2>
 
-      <div style={card}>
-        <h2
-          style={{
-            marginBottom: "20px",
-          }}
-        >
-          Upcoming Citizens
-        </h2>
+            <table
+              style={{
+                width: "100%",
+              }}
+            >
+              <thead>
+                <tr>
+                  <th style={th}>Token</th>
 
-        <table
-          style={{
-            width: "100%",
-          }}
-        >
-          <thead>
-            <tr>
-              <th style={th}>Token</th>
-              <th style={th}>Citizen</th>
-              <th style={th}>Purpose</th>
-              <th style={th}>Time</th>
-            </tr>
-          </thead>
+                  <th style={th}>Citizen</th>
 
-          <tbody>
-            {upcomingCitizens.map(
-              (citizen, index) => (
-                <tr key={index}>
-                  <td style={td}>
-                    {citizen.token}
-                  </td>
+                  <th style={th}>Purpose</th>
 
-                  <td style={td}>
-                    {citizen.name}
-                  </td>
-
-                  <td style={td}>
-                    {citizen.purpose}
-                  </td>
-
-                  <td style={td}>
-                    {citizen.time}
-                  </td>
+                  <th style={th}>Time</th>
                 </tr>
-              )
-            )}
-          </tbody>
-        </table>
+              </thead>
+
+              <tbody>
+                {upcomingCitizens.map((citizen, index) => (
+                  <tr key={index}>
+                    <td style={td}>{citizen.token}</td>
+
+                    <td style={td}>{citizen.name}</td>
+
+                    <td style={td}>{citizen.purpose}</td>
+
+                    <td style={td}>{citizen.time}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function StatCard({
-  title,
-  value,
-  color,
-}) {
+function StatCard({ title, value, gradient }) {
   return (
     <div
       style={{
-        background: color,
+        background: gradient,
         color: "white",
-        padding: "24px",
         borderRadius: "22px",
-        boxShadow:
-          "0 10px 25px rgba(0,0,0,0.1)",
+        padding: "25px",
       }}
     >
       <p>{title}</p>
 
       <h1
         style={{
-          fontSize: "42px",
+          fontSize: "48px",
           marginTop: "10px",
         }}
       >
@@ -332,22 +398,18 @@ function StatCard({
   );
 }
 
-function FocusItem({
-  title,
-  value,
-}) {
+function FocusItem({ title, value }) {
   return (
     <div
       style={{
         display: "flex",
-        justifyContent:
-          "space-between",
+        justifyContent: "space-between",
         padding: "14px 0",
-        borderBottom:
-          "1px solid #E2E8F0",
+        borderBottom: "1px solid #E5E7EB",
       }}
     >
       <span>{title}</span>
+
       <strong>{value}</strong>
     </div>
   );
@@ -355,30 +417,18 @@ function FocusItem({
 
 const card = {
   background: "white",
-  borderRadius: "24px",
+  borderRadius: "22px",
   padding: "25px",
-  boxShadow:
-    "0 10px 30px rgba(0,0,0,0.08)",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
 };
 
 const th = {
   textAlign: "left",
   paddingBottom: "15px",
-  color: "#475569",
+  color: "#64748B",
 };
 
 const td = {
   padding: "14px 0",
-  borderBottom:
-    "1px solid #E2E8F0",
-};
-
-const joinBtn = {
-  background: "#10B981",
-  color: "white",
-  border: "none",
-  padding: "10px 16px",
-  borderRadius: "10px",
-  cursor: "pointer",
-  marginTop: "10px",
+  borderBottom: "1px solid #E5E7EB",
 };
