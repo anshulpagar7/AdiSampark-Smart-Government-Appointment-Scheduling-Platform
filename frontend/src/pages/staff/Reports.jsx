@@ -25,7 +25,6 @@ export default function Reports() {
 
   const officers = [
     { name: "Leena Bansod", total: 30, completed: 14, color: "#2563EB" },
-    { name: "Anshul Pagar", total: 18, completed: 7, color: "#10B981" },
   ];
 
   const maxMonthly = Math.max(...monthlyData.map(d => d.value));
@@ -37,7 +36,6 @@ export default function Reports() {
     { label: "Approved", pct: 13, color: "#2563EB" },
   ];
 
-  // Build conic gradient
   let cumulativePct = 0;
   const conicStops = pieSegments.map(seg => {
     const start = cumulativePct;
@@ -165,7 +163,7 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Officer Performance */}
+      {/* Officer Performance + Executive Meetings */}
       <div style={styles.bottomGrid}>
         <div style={styles.chartCard}>
           <div style={styles.chartHeader}>
