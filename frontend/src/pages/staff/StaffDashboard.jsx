@@ -1,315 +1,414 @@
 export default function StaffDashboard() {
+  const stats = [
+    { label: "Appointments Today", value: "48", icon: "📋", color: "#2563EB", bg: "#EFF6FF", trend: "+12% vs yesterday" },
+    { label: "Waiting", value: "18", icon: "⏳", color: "#F59E0B", bg: "#FFFBEB", trend: "Next: Priya Patil" },
+    { label: "Completed", value: "21", icon: "✅", color: "#10B981", bg: "#ECFDF5", trend: "44% completion rate" },
+    { label: "No Shows", value: "3", icon: "❌", color: "#EF4444", bg: "#FEF2F2", trend: "6.25% no-show rate" },
+  ];
+
+  const appointments = [
+    { name: "Rahul Sharma", purpose: "Scholarship", time: "09:00 AM", officer: "Leena Bansod", status: "Approved" },
+    { name: "Priya Patil", purpose: "Certificate", time: "09:10 AM", officer: "Leena Bansod", status: "Waiting" },
+    { name: "Amit Kumar", purpose: "Employment", time: "09:20 AM", officer: "Anshul Pagar", status: "Completed" },
+    { name: "Sneha Joshi", purpose: "Education", time: "09:30 AM", officer: "Leena Bansod", status: "Waiting" },
+    { name: "Vikram Singh", purpose: "Complaint", time: "09:40 AM", officer: "Anshul Pagar", status: "Pending" },
+  ];
+
+  const meetings = [
+    { title: "Head Office Review Meeting", date: "20 June 2026", time: "2:00 PM", mode: "Google Meet" },
+    { title: "Regional Officer Discussion", date: "21 June 2026", time: "4:00 PM", mode: "Physical" },
+  ];
+
+  const events = [
+    { title: "Scholarship Camp", date: "12 June 2026", icon: "🎓" },
+    { title: "Tribal Welfare Drive", date: "18 June 2026", icon: "🌿" },
+    { title: "Education Workshop", date: "22 June 2026", icon: "📚" },
+  ];
+
+  const statusColor = {
+    Approved: { bg: "#EFF6FF", color: "#2563EB" },
+    Waiting: { bg: "#FFFBEB", color: "#D97706" },
+    Completed: { bg: "#ECFDF5", color: "#059669" },
+    Pending: { bg: "#F5F3FF", color: "#7C3AED" },
+    "No Show": { bg: "#FEF2F2", color: "#DC2626" },
+  };
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#F8FAFC",
-        color: "#111827",
-        padding: "40px"
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: "30px"
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "42px",
-            marginBottom: "8px"
-          }}
-        >
-          Good Morning 👋
-        </h1>
-
-        <p
-          style={{
-            color: "#64748B",
-            fontSize: "18px"
-          }}
-        >
-          Welcome to Shabri Staff Portal
-        </p>
-      </div>
-
-      {/* KPI CARDS */}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit,minmax(220px,1fr))",
-          gap: "20px"
-        }}
-      >
-        <StatCard
-          title="Appointments Today"
-          value="48"
-          color="#2563EB"
-        />
-
-        <StatCard
-          title="Waiting"
-          value="18"
-          color="#F59E0B"
-        />
-
-        <StatCard
-          title="Completed"
-          value="21"
-          color="#22C55E"
-        />
-
-        <StatCard
-          title="No Shows"
-          value="3"
-          color="#EF4444"
-        />
-      </div>
-
-      {/* QUEUE + EVENTS */}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr",
-          gap: "20px",
-          marginTop: "30px"
-        }}
-      >
-        {/* Queue Card */}
-
-        <div style={card}>
-          <p
-            style={{
-              color: "#64748B",
-              marginBottom: "10px"
-            }}
-          >
-            CURRENT QUEUE
+    <div style={styles.page}>
+      {/* Page Header */}
+      <div style={styles.pageHeader}>
+        <div>
+          <p style={styles.pageEyebrow}>STAFF OPERATIONS CENTER</p>
+          <h1 style={styles.pageTitle}>Good Morning 👋</h1>
+          <p style={styles.pageSub}>
+            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} &nbsp;•&nbsp; Shabri Staff Portal
           </p>
+        </div>
+        <div style={styles.headerActions}>
+          <div style={styles.headerBadge}>
+            <span style={styles.pulseDot} />
+            <span style={{ fontSize: "13px", color: "#059669", fontWeight: "600" }}>Live</span>
+          </div>
+          <div style={styles.timeBadge}>🕐 11:00 AM – 5:00 PM</div>
+        </div>
+      </div>
 
-          <h1
-            style={{
-              fontSize: "64px",
-              color: "#2563EB",
-              margin: 0
-            }}
-          >
-            #12
-          </h1>
+      {/* Stats Cards */}
+      <div style={styles.statsGrid}>
+        {stats.map(s => (
+          <div key={s.label} style={styles.statCard}>
+            <div style={styles.statTop}>
+              <div>
+                <p style={styles.statLabel}>{s.label}</p>
+                <h2 style={{ ...styles.statValue, color: s.color }}>{s.value}</h2>
+              </div>
+              <div style={{ ...styles.statIconBox, background: s.bg }}>
+                <span style={{ fontSize: "22px" }}>{s.icon}</span>
+              </div>
+            </div>
+            <div style={{ ...styles.statBar, background: s.bg }}>
+              <div style={{ ...styles.statBarFill, background: s.color, width: `${(parseInt(s.value) / 48) * 100}%` }} />
+            </div>
+            <p style={styles.statTrend}>{s.trend}</p>
+          </div>
+        ))}
+      </div>
 
-          <div
-            style={{
-              marginTop: "20px"
-            }}
-          >
-            <p>
-              Currently Serving:
-              <strong>
-                {" "}Rahul Sharma
-              </strong>
-            </p>
-
-            <p>
-              Waiting Visitors:
-              <strong>
-                {" "}18
-              </strong>
-            </p>
+      {/* Middle Section */}
+      <div style={styles.midGrid}>
+        {/* Queue Status */}
+        <div style={styles.queueCard}>
+          <div style={styles.cardHeader}>
+            <p style={styles.cardEyebrow}>🔢 CURRENT QUEUE</p>
+          </div>
+          <div style={styles.queueDisplay}>
+            <div style={styles.tokenBig}>
+              <p style={styles.tokenLabel}>NOW SERVING</p>
+              <div style={styles.tokenNumber}>#12</div>
+              <p style={styles.tokenName}>Rahul Sharma</p>
+              <p style={styles.tokenPurpose}>Scholarship Query</p>
+            </div>
+            <div style={styles.queueStats}>
+              <div style={styles.queueStat}>
+                <span style={styles.queueStatNum}>18</span>
+                <span style={styles.queueStatLabel}>Waiting</span>
+              </div>
+              <div style={styles.queueStatDivider} />
+              <div style={styles.queueStat}>
+                <span style={styles.queueStatNum}>~10</span>
+                <span style={styles.queueStatLabel}>Min/Visitor</span>
+              </div>
+              <div style={styles.queueStatDivider} />
+              <div style={styles.queueStat}>
+                <span style={styles.queueStatNum}>3h</span>
+                <span style={styles.queueStatLabel}>Est. Wait</span>
+              </div>
+            </div>
+          </div>
+          <div style={styles.nextCard}>
+            <p style={styles.nextLabel}>UP NEXT</p>
+            <p style={styles.nextName}>Priya Patil &nbsp;<span style={{ color: "#94A3B8", fontWeight: "400" }}>• Token #13</span></p>
           </div>
         </div>
 
-        {/* Events */}
+        {/* Upcoming Meetings */}
+        <div style={styles.card}>
+          <p style={styles.cardEyebrow}>🤝 EXECUTIVE MEETINGS</p>
+          <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            {meetings.map((m, i) => (
+              <div key={i} style={styles.meetingItem}>
+                <div style={styles.meetingDateBox}>
+                  <span style={styles.meetingDay}>{m.date.split(" ")[0]}</span>
+                  <span style={styles.meetingMonth}>{m.date.split(" ")[1].slice(0, 3)}</span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={styles.meetingTitle}>{m.title}</p>
+                  <p style={styles.meetingMeta}>{m.time} &nbsp;•&nbsp; {m.mode}</p>
+                </div>
+                <span style={styles.meetingModeBadge}>{m.mode === "Google Meet" ? "🎥" : "🏢"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
-        <div style={card}>
-          <h2>Upcoming Events</h2>
-
-          <EventCard
-            title="Scholarship Camp"
-            date="12 June 2026"
-          />
-
-          <EventCard
-            title="Tribal Welfare Drive"
-            date="18 June 2026"
-          />
-
-          <EventCard
-            title="Education Workshop"
-            date="22 June 2026"
-          />
+        {/* Upcoming Events */}
+        <div style={styles.card}>
+          <p style={styles.cardEyebrow}>📣 UPCOMING EVENTS</p>
+          <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            {events.map((e, i) => (
+              <div key={i} style={styles.eventItem}>
+                <span style={styles.eventIcon}>{e.icon}</span>
+                <div>
+                  <p style={styles.eventTitle}>{e.title}</p>
+                  <p style={styles.eventDate}>{e.date}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* TODAY'S APPOINTMENTS */}
-
-      <div
-        style={{
-          ...card,
-          marginTop: "30px"
-        }}
-      >
-        <h2
-          style={{
-            marginBottom: "20px"
-          }}
-        >
-          Today's Appointments
-        </h2>
-
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse"
-          }}
-        >
-          <thead>
-            <tr>
-              <th style={th}>Name</th>
-              <th style={th}>Purpose</th>
-              <th style={th}>Time</th>
-              <th style={th}>Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr>
-              <td style={td}>Rahul Sharma</td>
-              <td style={td}>Scholarship</td>
-              <td style={td}>09:00 AM</td>
-              <td style={td}>
-                <Status color="#2563EB">
-                  Approved
-                </Status>
-              </td>
-            </tr>
-
-            <tr>
-              <td style={td}>Priya Patil</td>
-              <td style={td}>Certificate</td>
-              <td style={td}>09:10 AM</td>
-              <td style={td}>
-                <Status color="#F59E0B">
-                  Waiting
-                </Status>
-              </td>
-            </tr>
-
-            <tr>
-              <td style={td}>Amit Kumar</td>
-              <td style={td}>Employment</td>
-              <td style={td}>09:20 AM</td>
-              <td style={td}>
-                <Status color="#22C55E">
-                  Completed
-                </Status>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Appointments Table */}
+      <div style={{ ...styles.card, marginTop: "24px" }}>
+        <div style={styles.tableHeader}>
+          <p style={styles.cardEyebrow}>📋 TODAY'S APPOINTMENTS</p>
+          <div style={styles.tableHeaderRight}>
+            <span style={styles.tableCount}>48 total</span>
+          </div>
+        </div>
+        <div style={{ overflowX: "auto", marginTop: "16px" }}>
+          <table style={styles.table}>
+            <thead>
+              <tr style={styles.thead}>
+                {["Citizen", "Purpose", "Officer", "Time", "Status"].map(h => (
+                  <th key={h} style={styles.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {appointments.map((a, i) => {
+                const sc = statusColor[a.status] || { bg: "#F1F5F9", color: "#64748B" };
+                return (
+                  <tr key={i} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.citizenCell}>
+                        <div style={styles.avatar}>{a.name[0]}</div>
+                        <span style={styles.citizenName}>{a.name}</span>
+                      </div>
+                    </td>
+                    <td style={styles.td}><span style={styles.purposeTag}>{a.purpose}</span></td>
+                    <td style={styles.td}><span style={styles.officerText}>{a.officer}</span></td>
+                    <td style={styles.td}><span style={styles.timeText}>{a.time}</span></td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.statusBadge, background: sc.bg, color: sc.color }}>
+                        {a.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
-function StatCard({
-  title,
-  value,
-  color
-}) {
-  return (
-    <div
-      style={{
-        background: "white",
-        borderRadius: "20px",
-        padding: "25px",
-        boxShadow:
-          "0 10px 30px rgba(0,0,0,0.08)",
-        borderTop: `5px solid ${color}`
-      }}
-    >
-      <p
-        style={{
-          color: "#64748B"
-        }}
-      >
-        {title}
-      </p>
-
-      <h1
-        style={{
-          margin: 0
-        }}
-      >
-        {value}
-      </h1>
-    </div>
-  );
-}
-
-function EventCard({
-  title,
-  date
-}) {
-  return (
-    <div
-      style={{
-        background: "#F8FAFC",
-        padding: "12px",
-        borderRadius: "12px",
-        marginBottom: "10px"
-      }}
-    >
-      <strong>{title}</strong>
-
-      <p
-        style={{
-          margin: "5px 0 0",
-          color: "#64748B"
-        }}
-      >
-        {date}
-      </p>
-    </div>
-  );
-}
-
-function Status({
-  children,
-  color
-}) {
-  return (
-    <span
-      style={{
-        background: color,
-        color: "white",
-        padding: "6px 12px",
-        borderRadius: "20px",
-        fontSize: "14px"
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-const card = {
-  background: "white",
-  borderRadius: "20px",
-  padding: "25px",
-  boxShadow:
-    "0 10px 30px rgba(0,0,0,0.08)"
-};
-
-const th = {
-  textAlign: "left",
-  paddingBottom: "15px",
-  borderBottom: "1px solid #E2E8F0"
-};
-
-const td = {
-  padding: "15px 0",
-  borderBottom: "1px solid #F1F5F9"
+const styles = {
+  page: {
+    padding: "36px 40px",
+    background: "#F8FAFC",
+    minHeight: "100vh",
+    fontFamily: "'Segoe UI', system-ui, sans-serif",
+  },
+  pageHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: "30px",
+    flexWrap: "wrap",
+    gap: "16px",
+  },
+  pageEyebrow: {
+    margin: "0 0 6px",
+    fontSize: "11px",
+    fontWeight: "700",
+    letterSpacing: "2px",
+    color: "#2563EB",
+  },
+  pageTitle: { margin: "0 0 6px", fontSize: "32px", fontWeight: "800", color: "#111827" },
+  pageSub: { margin: 0, fontSize: "14px", color: "#64748B" },
+  headerActions: { display: "flex", gap: "12px", alignItems: "center" },
+  headerBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    background: "#ECFDF5",
+    border: "1px solid #A7F3D0",
+    borderRadius: "20px",
+    padding: "8px 14px",
+  },
+  pulseDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#10B981",
+    display: "inline-block",
+  },
+  timeBadge: {
+    background: "#fff",
+    border: "1px solid #E2E8F0",
+    borderRadius: "20px",
+    padding: "8px 14px",
+    fontSize: "13px",
+    color: "#374151",
+    fontWeight: "500",
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "20px",
+    marginBottom: "24px",
+  },
+  statCard: {
+    background: "#fff",
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)",
+  },
+  statTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" },
+  statLabel: { margin: "0 0 6px", fontSize: "13px", color: "#64748B", fontWeight: "500" },
+  statValue: { margin: 0, fontSize: "36px", fontWeight: "800", lineHeight: 1 },
+  statIconBox: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statBar: { height: "4px", borderRadius: "4px", overflow: "hidden", marginBottom: "10px" },
+  statBarFill: { height: "100%", borderRadius: "4px", transition: "width 0.5s ease" },
+  statTrend: { margin: 0, fontSize: "12px", color: "#94A3B8" },
+  midGrid: {
+    display: "grid",
+    gridTemplateColumns: "2fr 1.2fr 1.2fr",
+    gap: "20px",
+  },
+  queueCard: {
+    background: "#fff",
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)",
+  },
+  card: {
+    background: "#fff",
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)",
+  },
+  cardHeader: { marginBottom: "4px" },
+  cardEyebrow: {
+    margin: 0,
+    fontSize: "11px",
+    fontWeight: "700",
+    letterSpacing: "1.5px",
+    color: "#94A3B8",
+  },
+  queueDisplay: { display: "flex", gap: "24px", alignItems: "center", margin: "20px 0 16px" },
+  tokenBig: { flex: 1, textAlign: "center" },
+  tokenLabel: { margin: "0 0 4px", fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", color: "#94A3B8" },
+  tokenNumber: {
+    fontSize: "56px",
+    fontWeight: "900",
+    color: "#2563EB",
+    lineHeight: 1,
+    margin: "4px 0",
+  },
+  tokenName: { margin: "4px 0 2px", fontWeight: "700", fontSize: "15px", color: "#111827" },
+  tokenPurpose: { margin: 0, fontSize: "12px", color: "#64748B" },
+  queueStats: { display: "flex", flexDirection: "column", gap: "12px" },
+  queueStat: { display: "flex", flexDirection: "column", alignItems: "center" },
+  queueStatNum: { fontSize: "22px", fontWeight: "800", color: "#111827" },
+  queueStatLabel: { fontSize: "10px", color: "#94A3B8", fontWeight: "600", letterSpacing: "0.5px" },
+  queueStatDivider: { height: "1px", width: "40px", background: "#F1F5F9" },
+  nextCard: {
+    background: "#F8FAFC",
+    borderRadius: "10px",
+    padding: "12px 16px",
+    border: "1px solid #E2E8F0",
+  },
+  nextLabel: { margin: "0 0 4px", fontSize: "10px", fontWeight: "700", letterSpacing: "1px", color: "#94A3B8" },
+  nextName: { margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827" },
+  meetingItem: {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    padding: "12px",
+    background: "#F8FAFC",
+    borderRadius: "10px",
+    border: "1px solid #E2E8F0",
+  },
+  meetingDateBox: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    background: "#2563EB",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    minWidth: "40px",
+  },
+  meetingDay: { color: "#fff", fontSize: "16px", fontWeight: "800", lineHeight: 1 },
+  meetingMonth: { color: "rgba(255,255,255,0.75)", fontSize: "10px", fontWeight: "600", letterSpacing: "0.5px" },
+  meetingTitle: { margin: "0 0 3px", fontSize: "13px", fontWeight: "600", color: "#111827" },
+  meetingMeta: { margin: 0, fontSize: "11px", color: "#64748B" },
+  meetingModeBadge: { fontSize: "18px" },
+  eventItem: {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    padding: "10px 12px",
+    background: "#F8FAFC",
+    borderRadius: "10px",
+    border: "1px solid #E2E8F0",
+  },
+  eventIcon: { fontSize: "20px" },
+  eventTitle: { margin: "0 0 3px", fontSize: "13px", fontWeight: "600", color: "#111827" },
+  eventDate: { margin: 0, fontSize: "11px", color: "#2563EB", fontWeight: "600" },
+  tableHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  tableHeaderRight: {},
+  tableCount: {
+    background: "#F1F5F9",
+    color: "#64748B",
+    fontSize: "12px",
+    fontWeight: "600",
+    padding: "4px 10px",
+    borderRadius: "20px",
+  },
+  table: { width: "100%", borderCollapse: "collapse" },
+  thead: { background: "#F8FAFC" },
+  th: {
+    padding: "10px 16px",
+    textAlign: "left",
+    fontSize: "11px",
+    fontWeight: "700",
+    color: "#94A3B8",
+    letterSpacing: "0.8px",
+    textTransform: "uppercase",
+    borderBottom: "1px solid #E2E8F0",
+  },
+  tr: { borderBottom: "1px solid #F1F5F9" },
+  td: { padding: "14px 16px", fontSize: "14px", color: "#374151" },
+  citizenCell: { display: "flex", gap: "10px", alignItems: "center" },
+  avatar: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "8px",
+    background: "linear-gradient(135deg, #2563EB, #1E3A8A)",
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: "13px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  citizenName: { fontWeight: "600", color: "#111827" },
+  purposeTag: {
+    background: "#EFF6FF",
+    color: "#2563EB",
+    fontSize: "12px",
+    fontWeight: "600",
+    padding: "4px 10px",
+    borderRadius: "6px",
+  },
+  officerText: { color: "#64748B", fontSize: "13px" },
+  timeText: { fontWeight: "600", fontFamily: "monospace", fontSize: "13px" },
+  statusBadge: {
+    padding: "5px 12px",
+    borderRadius: "20px",
+    fontSize: "12px",
+    fontWeight: "700",
+  },
 };
