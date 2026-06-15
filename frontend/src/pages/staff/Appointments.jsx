@@ -1,192 +1,231 @@
+import { useState } from "react";
+
+const ALL_APPOINTMENTS = [
+  { id: "SHA-1001", name: "Rahul Sharma", mobile: "9876543210", officer: "Leena Bansod", purpose: "Scholarship", time: "09:00 AM", status: "Pending" },
+  { id: "SHA-1002", name: "Priya Patil", mobile: "9876543211", officer: "Leena Bansod", purpose: "Certificate", time: "09:10 AM", status: "Approved" },
+  { id: "SHA-1003", name: "Amit Kumar", mobile: "9876543212", officer: "Anshul Pagar", purpose: "Employment", time: "09:20 AM", status: "Completed" },
+  { id: "SHA-1004", name: "Sneha Joshi", mobile: "9876543213", officer: "Leena Bansod", purpose: "Education", time: "09:30 AM", status: "Pending" },
+  { id: "SHA-1005", name: "Vikram Singh", mobile: "9876543214", officer: "Anshul Pagar", purpose: "Complaint", time: "09:40 AM", status: "No Show" },
+  { id: "SHA-1006", name: "Anjali More", mobile: "9876543215", officer: "Leena Bansod", purpose: "Scholarship", time: "09:50 AM", status: "Approved" },
+  { id: "SHA-1007", name: "Rohan Desai", mobile: "9876543216", officer: "Anshul Pagar", purpose: "Certificate", time: "10:00 AM", status: "Completed" },
+];
+
+const STATUS_CONFIG = {
+  Pending:   { bg: "#FEF3C7", color: "#D97706", dot: "#F59E0B" },
+  Approved:  { bg: "#EFF6FF", color: "#2563EB", dot: "#2563EB" },
+  Completed: { bg: "#ECFDF5", color: "#059669", dot: "#10B981" },
+  "No Show": { bg: "#FEF2F2", color: "#DC2626", dot: "#EF4444" },
+  Cancelled: { bg: "#F5F3FF", color: "#7C3AED", dot: "#8B5CF6" },
+};
+
 export default function Appointments() {
-  const appointments = [
-    {
-      id: "SHA-1001",
-      name: "Rahul Sharma",
-      mobile: "9876543210",
-      officer: "Leena Bansod Madam",
-      purpose: "Scholarship",
-      time: "09:00 AM",
-      status: "Pending"
-    },
-    {
-      id: "SHA-1002",
-      name: "Priya Patil",
-      mobile: "9876543211",
-      officer: "Leena Bansod Madam",
-      purpose: "Certificate",
-      time: "09:10 AM",
-      status: "Approved"
-    },
-    {
-      id: "SHA-1003",
-      name: "Amit Kumar",
-      mobile: "9876543212",
-      officer: "Anshul Pagar",
-      purpose: "Employment",
-      time: "09:20 AM",
-      status: "Completed"
-    },
-    {
-      id: "SHA-1004",
-      name: "Sneha Joshi",
-      mobile: "9876543213",
-      officer: "Leena Bansod Madam",
-      purpose: "Education",
-      time: "09:30 AM",
-      status: "Pending"
-    }
-  ];
+  const [appointments, setAppointments] = useState(ALL_APPOINTMENTS);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [filterOfficer, setFilterOfficer] = useState("All");
+
+  const updateStatus = (id, newStatus) => {
+    setAppointments(prev =>
+      prev.map(a => a.id === id ? { ...a, status: newStatus } : a)
+    );
+  };
+
+  const filtered = appointments.filter(a => {
+    const matchSearch =
+      a.name.toLowerCase().includes(search.toLowerCase()) ||
+      a.id.toLowerCase().includes(search.toLowerCase()) ||
+      a.mobile.includes(search);
+    const matchStatus = filterStatus === "All" || a.status === filterStatus;
+    const matchOfficer = filterOfficer === "All" || a.officer === filterOfficer;
+    return matchSearch && matchStatus && matchOfficer;
+  });
+
+  const counts = { All: appointments.length };
+  appointments.forEach(a => { counts[a.status] = (counts[a.status] || 0) + 1; });
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f8fafc",
-        padding: "30px"
-      }}
-    >
-      <h1>Appointments Management</h1>
+    <div style={styles.page}>
+      {/* Header */}
+      <div style={styles.pageHeader}>
+        <div>
+          <p style={styles.eyebrow}>STAFF PORTAL</p>
+          <h1 style={styles.title}>Appointments</h1>
+          <p style={styles.sub}>Manage citizen appointments and queue status.</p>
+        </div>
+        <button style={styles.primaryBtn}>+ New Appointment</button>
+      </div>
 
-      <p
-        style={{
-          color: "#666",
-          marginBottom: "25px"
-        }}
-      >
-        Manage citizen appointments and queue status.
-      </p>
+      {/* Status Tabs */}
+      <div style={styles.tabRow}>
+        {["All", "Pending", "Approved", "Completed", "No Show"].map(s => (
+          <button
+            key={s}
+            onClick={() => setFilterStatus(s)}
+            style={{
+              ...styles.tab,
+              background: filterStatus === s ? "#2563EB" : "#fff",
+              color: filterStatus === s ? "#fff" : "#64748B",
+              borderColor: filterStatus === s ? "#2563EB" : "#E2E8F0",
+            }}
+          >
+            {s}
+            <span style={{
+              ...styles.tabCount,
+              background: filterStatus === s ? "rgba(255,255,255,0.25)" : "#F1F5F9",
+              color: filterStatus === s ? "#fff" : "#64748B",
+            }}>
+              {counts[s] || 0}
+            </span>
+          </button>
+        ))}
+      </div>
 
-      <div
-        style={{
-          background: "white",
-          borderRadius: "16px",
-          padding: "20px",
-          boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
-          overflowX: "auto"
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse"
-          }}
+      {/* Filters & Search */}
+      <div style={styles.filterRow}>
+        <div style={styles.searchWrap}>
+          <span style={styles.searchIcon}>🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, ID, or mobile..."
+            style={styles.searchInput}
+          />
+          {search && (
+            <button onClick={() => setSearch("")} style={styles.clearBtn}>✕</button>
+          )}
+        </div>
+        <select
+          value={filterOfficer}
+          onChange={e => setFilterOfficer(e.target.value)}
+          style={styles.select}
         >
-          <thead>
-            <tr
-              style={{
-                background: "#f1f5f9"
-              }}
-            >
-              <th style={tableHeader}>ID</th>
-              <th style={tableHeader}>Name</th>
-              <th style={tableHeader}>Mobile</th>
-              <th style={tableHeader}>Officer</th>
-              <th style={tableHeader}>Purpose</th>
-              <th style={tableHeader}>Time</th>
-              <th style={tableHeader}>Status</th>
-              <th style={tableHeader}>Actions</th>
-            </tr>
-          </thead>
+          <option value="All">All Officers</option>
+          <option>Leena Bansod</option>
+          <option>Anshul Pagar</option>
+        </select>
+      </div>
 
-          <tbody>
-            {appointments.map((appointment) => (
-              <tr key={appointment.id}>
-                <td style={tableCell}>{appointment.id}</td>
-                <td style={tableCell}>{appointment.name}</td>
-                <td style={tableCell}>{appointment.mobile}</td>
-                <td style={tableCell}>{appointment.officer}</td>
-                <td style={tableCell}>{appointment.purpose}</td>
-                <td style={tableCell}>{appointment.time}</td>
-
-                <td style={tableCell}>
-                  <span
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: "20px",
-                      background:
-                        appointment.status === "Completed"
-                          ? "#dcfce7"
-                          : appointment.status === "Approved"
-                          ? "#dbeafe"
-                          : "#fef3c7",
-                      color:
-                        appointment.status === "Completed"
-                          ? "#166534"
-                          : appointment.status === "Approved"
-                          ? "#1d4ed8"
-                          : "#92400e",
-                      fontWeight: "600"
-                    }}
-                  >
-                    {appointment.status}
-                  </span>
-                </td>
-
-                <td style={tableCell}>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      flexWrap: "wrap"
-                    }}
-                  >
-                    <button style={approveBtn}>
-                      Approve
-                    </button>
-
-                    <button style={completeBtn}>
-                      Complete
-                    </button>
-
-                    <button style={noShowBtn}>
-                      No Show
-                    </button>
-                  </div>
-                </td>
+      {/* Table */}
+      <div style={styles.tableCard}>
+        <div style={styles.tableTop}>
+          <span style={styles.tableCount}>{filtered.length} appointments</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                {["Token ID", "Citizen", "Mobile", "Officer", "Purpose", "Time", "Status", "Actions"].map(h => (
+                  <th key={h} style={styles.th}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={styles.emptyCell}>
+                    <div style={styles.emptyState}>
+                      <span style={{ fontSize: "32px" }}>🔍</span>
+                      <p style={{ margin: "8px 0 0", color: "#64748B", fontWeight: "500" }}>No appointments match your filters</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filtered.map((a) => {
+                const sc = STATUS_CONFIG[a.status] || { bg: "#F1F5F9", color: "#64748B", dot: "#94A3B8" };
+                return (
+                  <tr key={a.id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <span style={styles.tokenId}>{a.id}</span>
+                    </td>
+                    <td style={styles.td}>
+                      <div style={styles.citizenCell}>
+                        <div style={styles.avatar}>{a.name[0]}</div>
+                        <span style={styles.citizenName}>{a.name}</span>
+                      </div>
+                    </td>
+                    <td style={styles.td}><span style={styles.mono}>{a.mobile}</span></td>
+                    <td style={styles.td}><span style={styles.officerText}>{a.officer}</span></td>
+                    <td style={styles.td}>
+                      <span style={styles.purposeTag}>{a.purpose}</span>
+                    </td>
+                    <td style={styles.td}><span style={styles.mono}>{a.time}</span></td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.statusBadge, background: sc.bg, color: sc.color }}>
+                        <span style={{ ...styles.statusDot, background: sc.dot }} />
+                        {a.status}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <div style={styles.actionBtns}>
+                        {a.status !== "Approved" && a.status !== "Completed" && (
+                          <button
+                            onClick={() => updateStatus(a.id, "Approved")}
+                            style={styles.actionBtnBlue}
+                            title="Approve"
+                          >Approve</button>
+                        )}
+                        {a.status !== "Completed" && a.status !== "No Show" && (
+                          <button
+                            onClick={() => updateStatus(a.id, "Completed")}
+                            style={styles.actionBtnGreen}
+                            title="Complete"
+                          >Complete</button>
+                        )}
+                        {a.status !== "No Show" && a.status !== "Completed" && (
+                          <button
+                            onClick={() => updateStatus(a.id, "No Show")}
+                            style={styles.actionBtnRed}
+                            title="No Show"
+                          >No Show</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
-const tableHeader = {
-  padding: "12px",
-  textAlign: "left",
-  borderBottom: "1px solid #ddd"
-};
-
-const tableCell = {
-  padding: "12px",
-  borderBottom: "1px solid #eee"
-};
-
-const approveBtn = {
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  padding: "8px 12px",
-  borderRadius: "8px",
-  cursor: "pointer"
-};
-
-const completeBtn = {
-  background: "#16a34a",
-  color: "white",
-  border: "none",
-  padding: "8px 12px",
-  borderRadius: "8px",
-  cursor: "pointer"
-};
-
-const noShowBtn = {
-  background: "#dc2626",
-  color: "white",
-  border: "none",
-  padding: "8px 12px",
-  borderRadius: "8px",
-  cursor: "pointer"
+const styles = {
+  page: { padding: "36px 40px", background: "#F8FAFC", minHeight: "100vh", fontFamily: "'Segoe UI', system-ui, sans-serif" },
+  pageHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "28px", flexWrap: "wrap", gap: "16px" },
+  eyebrow: { margin: "0 0 6px", fontSize: "11px", fontWeight: "700", letterSpacing: "2px", color: "#2563EB" },
+  title: { margin: "0 0 6px", fontSize: "28px", fontWeight: "800", color: "#111827" },
+  sub: { margin: 0, fontSize: "14px", color: "#64748B" },
+  primaryBtn: { background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", border: "none", padding: "12px 20px", borderRadius: "12px", fontWeight: "700", fontSize: "14px", cursor: "pointer" },
+  tabRow: { display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" },
+  tab: { display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "20px", border: "1.5px solid", fontSize: "13px", fontWeight: "600", cursor: "pointer", transition: "all 0.15s" },
+  tabCount: { fontSize: "11px", padding: "2px 8px", borderRadius: "20px", fontWeight: "700" },
+  filterRow: { display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" },
+  searchWrap: { flex: 1, minWidth: "260px", display: "flex", alignItems: "center", background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: "12px", padding: "0 14px" },
+  searchIcon: { fontSize: "15px", marginRight: "8px", flexShrink: 0 },
+  searchInput: { flex: 1, border: "none", outline: "none", fontSize: "14px", padding: "12px 0", background: "transparent", color: "#111827" },
+  clearBtn: { background: "none", border: "none", cursor: "pointer", color: "#94A3B8", fontSize: "14px", padding: "4px" },
+  select: { padding: "12px 16px", border: "1.5px solid #E2E8F0", borderRadius: "12px", fontSize: "14px", background: "#fff", color: "#374151", cursor: "pointer", outline: "none" },
+  tableCard: { background: "#fff", borderRadius: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)", overflow: "hidden" },
+  tableTop: { padding: "16px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "flex-end" },
+  tableCount: { fontSize: "12px", color: "#94A3B8", fontWeight: "600" },
+  table: { width: "100%", borderCollapse: "collapse" },
+  th: { padding: "12px 20px", textAlign: "left", fontSize: "11px", fontWeight: "700", color: "#94A3B8", letterSpacing: "0.8px", textTransform: "uppercase", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" },
+  tr: { borderBottom: "1px solid #F8FAFC", transition: "background 0.1s" },
+  td: { padding: "14px 20px", fontSize: "14px", color: "#374151", verticalAlign: "middle" },
+  tokenId: { fontFamily: "monospace", fontWeight: "700", fontSize: "13px", color: "#2563EB", background: "#EFF6FF", padding: "3px 8px", borderRadius: "6px" },
+  citizenCell: { display: "flex", gap: "10px", alignItems: "center" },
+  avatar: { width: "32px", height: "32px", borderRadius: "8px", background: "linear-gradient(135deg,#2563EB,#1E3A8A)", color: "#fff", fontWeight: "700", fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  citizenName: { fontWeight: "600", color: "#111827", fontSize: "14px" },
+  mono: { fontFamily: "monospace", fontSize: "13px", color: "#64748B" },
+  officerText: { fontSize: "13px", color: "#64748B" },
+  purposeTag: { background: "#F1F5F9", color: "#374151", fontSize: "12px", fontWeight: "600", padding: "4px 10px", borderRadius: "6px" },
+  statusBadge: { display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", whiteSpace: "nowrap" },
+  statusDot: { width: "6px", height: "6px", borderRadius: "50%", flexShrink: 0 },
+  actionBtns: { display: "flex", gap: "6px", flexWrap: "wrap" },
+  actionBtnBlue: { background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+  actionBtnGreen: { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+  actionBtnRed: { background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+  emptyCell: { padding: "48px", textAlign: "center" },
+  emptyState: { display: "flex", flexDirection: "column", alignItems: "center" },
 };
