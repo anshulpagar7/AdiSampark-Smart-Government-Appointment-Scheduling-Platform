@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { supabase } from "../../lib/supabase";
+import tribalLogo from "../../assets/tribal-logo.jpg";
 
 export default function StaffLogin({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -6,21 +8,34 @@ export default function StaffLogin({ onLogin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setError("");
     if (!username || !password) {
       setError("Please enter your credentials.");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (username === "admin" && password === "admin123") {
-        if (onLogin) onLogin();
-      } else {
-        setError("Invalid username or password. Please try again.");
-      }
-    }, 800);
+
+    const { data, error: dbError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("username", username.trim())
+      .eq("password", password.trim())
+      .single();
+
+    setLoading(false);
+
+    if (dbError || !data) {
+      setError("Invalid username or password. Please try again.");
+      return;
+    }
+
+    if (data.role !== "staff") {
+      setError("Unauthorized access.");
+      return;
+    }
+
+    if (onLogin) onLogin();
   };
 
   return (
@@ -30,7 +45,7 @@ export default function StaffLogin({ onLogin }) {
         <div style={styles.leftContent}>
           <div style={styles.logoBlock}>
             <div style={styles.logoCircle}>
-              <span style={styles.logoText}>MS</span>
+              <img src={tribalLogo} alt="SHABRI Logo" style={styles.logoImg} />
             </div>
           </div>
           <h1 style={styles.orgName}>
@@ -101,10 +116,6 @@ export default function StaffLogin({ onLogin }) {
           >
             {loading ? "Signing in..." : "Sign In →"}
           </button>
-
-          <p style={styles.hint}>
-            Use <strong>admin</strong> / <strong>admin123</strong> for demo access
-          </p>
         </div>
 
         <p style={styles.rightFooter}>
@@ -153,8 +164,13 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     border: "2px solid rgba(255,255,255,0.3)",
+    overflow: "hidden",
   },
-  logoText: { color: "#fff", fontWeight: "800", fontSize: "20px", letterSpacing: "1px" },
+  logoImg: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  },
   orgName: {
     color: "#fff",
     fontSize: "20px",
@@ -253,6 +269,5 @@ const styles = {
     cursor: "pointer",
     letterSpacing: "0.5px",
   },
-  hint: { textAlign: "center", marginTop: "16px", fontSize: "12px", color: "#94A3B8" },
   rightFooter: { marginTop: "32px", fontSize: "12px", color: "#CBD5E1", textAlign: "center" },
 };
