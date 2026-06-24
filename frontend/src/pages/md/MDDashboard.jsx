@@ -1,45 +1,50 @@
+import { useState, useEffect } from "react";
 import tribalLogo from "../../assets/tribal-logo.jpg";
- 
+import { supabase } from "../../lib/supabase";
+
 export default function MDDashboard() {
-  const executiveMeetings = [
-    {
-      title: "Head Office Review",
-      with: "Tribal Development Head Office",
-      time: "2:00 PM",
-      mode: "Google Meet",
-    },
-    {
-      title: "Regional Officer Review",
-      with: "Regional Office",
-      time: "4:00 PM",
-      mode: "Google Meet",
-    },
-  ];
- 
-  const upcomingCitizens = [
-    {
-      token: "SHA-1002",
-      name: "Priya Patil",
-      purpose: "Education Support",
-      time: "11:10 AM",
-    },
-    {
-      token: "SHA-1003",
-      name: "Amit Kumar",
-      purpose: "Certificate Verification",
-      time: "11:20 AM",
-    },
-    {
-      token: "SHA-1004",
-      name: "Sneha More",
-      purpose: "Scholarship Query",
-      time: "11:30 AM",
-    },
-  ];
- 
+  const [appointments, setAppointments] = useState([]);
+  const [meetings, setMeetings] = useState([]);
+
+  useEffect(() => {
+    fetchAppointments();
+    fetchMeetings();
+  }, []);
+
+  const fetchAppointments = async () => {
+    const { data, error } = await supabase
+      .from("appointments")
+      .select("*")
+      .order("appointment_time", { ascending: true });
+    if (error) {
+      console.log(error);
+      return;
+    }
+    setAppointments(data);
+  };
+
+  const fetchMeetings = async () => {
+    const { data, error } = await supabase
+      .from("executive_meetings")
+      .select("*");
+    if (error) {
+      console.log(error);
+      return;
+    }
+    setMeetings(data);
+  };
+
+  // Derived data
+  const currentCitizen = appointments.find(a => a.status === "In Cabin") || null;
+  const waitingCitizens = appointments.filter(a => a.status === "Waiting");
+  const nextCitizen = waitingCitizens[0] || null;
+  const completedCount = appointments.filter(a => a.status === "Completed").length;
+  const totalCount = appointments.length;
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
   return (
     <div style={{ minHeight: "100vh", background: "#F0F4FF", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
- 
+
       {/* ── Inject keyframes ── */}
       <style>{`
         @keyframes pulse-ring {
@@ -64,7 +69,7 @@ export default function MDDashboard() {
         .citizen-row:hover { background: #EFF6FF !important; }
         .citizen-row { transition: background 0.15s; }
       `}</style>
- 
+
       {/* ── HEADER ── */}
       <div style={{
         background: "linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%)",
@@ -102,9 +107,8 @@ export default function MDDashboard() {
             </h2>
           </div>
         </div>
- 
+
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Live indicator */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.12)", borderRadius: 99, padding: "8px 16px" }}>
             <span style={{
               width: 8, height: 8, borderRadius: "50%", background: "#4ADE80",
@@ -113,7 +117,6 @@ export default function MDDashboard() {
             }} />
             <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>Live Dashboard</span>
           </div>
-          {/* Date */}
           <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 16px" }}>
             <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
               {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
@@ -121,9 +124,9 @@ export default function MDDashboard() {
           </div>
         </div>
       </div>
- 
+
       <div style={{ padding: "32px 36px 48px", animation: "fadeSlideUp 0.4s ease" }}>
- 
+
         {/* ── WELCOME BANNER ── */}
         <div style={{
           background: "linear-gradient(120deg, #1E3A8A 0%, #2563EB 50%, #7C3AED 100%)",
@@ -137,10 +140,9 @@ export default function MDDashboard() {
           position: "relative",
           overflow: "hidden",
         }}>
-          {/* Decorative circles */}
           <div style={{ position: "absolute", top: -40, right: 120, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
           <div style={{ position: "absolute", bottom: -60, right: -20, width: 240, height: 240, borderRadius: "50%", background: "rgba(255,255,255,0.04)" }} />
- 
+
           <div style={{ position: "relative" }}>
             <p style={{ margin: "0 0 6px", fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
               Executive Monitoring Dashboard
@@ -149,10 +151,10 @@ export default function MDDashboard() {
               Good Morning, Madam 🌿
             </h1>
             <p style={{ margin: "10px 0 0", fontSize: 15, color: "rgba(255,255,255,0.75)" }}>
-              You have <strong style={{ color: "#fff" }}>18 citizens</strong> scheduled and <strong style={{ color: "#fff" }}>2 executive meetings</strong> today.
+              You have <strong style={{ color: "#fff" }}>{totalCount} citizens</strong> scheduled and <strong style={{ color: "#fff" }}>{meetings.length} executive meetings</strong> today.
             </p>
           </div>
- 
+
           <div style={{
             display: "flex",
             flexDirection: "column",
@@ -165,17 +167,18 @@ export default function MDDashboard() {
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Managing Director</span>
           </div>
         </div>
- 
+
         {/* ── STAT CARDS ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18, marginBottom: 28 }}>
-          <StatCard title="Today's Citizens" value="18" icon="👥" gradient="linear-gradient(135deg,#3B82F6,#2563EB)" shadow="rgba(37,99,235,0.35)" />
-          <StatCard title="Waiting" value="4" icon="⏳" gradient="linear-gradient(135deg,#F59E0B,#D97706)" shadow="rgba(217,119,6,0.35)" />
-          <StatCard title="Meetings" value="3" icon="📋" gradient="linear-gradient(135deg,#10B981,#059669)" shadow="rgba(5,150,105,0.35)" />
-          <StatCard title="Completed" value="12" icon="✅" gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)" shadow="rgba(124,58,237,0.35)" />
+          <StatCard title="Today's Citizens" value={totalCount} icon="👥" gradient="linear-gradient(135deg,#3B82F6,#2563EB)" shadow="rgba(37,99,235,0.35)" />
+          <StatCard title="Waiting" value={waitingCitizens.length} icon="⏳" gradient="linear-gradient(135deg,#F59E0B,#D97706)" shadow="rgba(217,119,6,0.35)" />
+          <StatCard title="Meetings" value={meetings.length} icon="📋" gradient="linear-gradient(135deg,#10B981,#059669)" shadow="rgba(5,150,105,0.35)" />
+          <StatCard title="Completed" value={completedCount} icon="✅" gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)" shadow="rgba(124,58,237,0.35)" />
         </div>
- 
+
         {/* ── CURRENT + NEXT CITIZEN ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 28 }}>
+
           {/* Currently Meeting */}
           <div style={{
             background: "#fff",
@@ -200,36 +203,45 @@ export default function MDDashboard() {
                 Currently Meeting
               </span>
             </div>
- 
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-              <div style={{
-                width: 52, height: 52, borderRadius: "50%",
-                background: "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
-                border: "2px solid #BFDBFE",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 22, fontWeight: 700, color: "#2563EB",
-              }}>
-                RS
+
+            {currentCitizen ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: "50%",
+                    background: "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
+                    border: "2px solid #BFDBFE",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 18, fontWeight: 700, color: "#2563EB",
+                  }}>
+                    {currentCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" }}>{currentCitizen.citizen_name}</h2>
+                    <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>{currentCitizen.purpose} · {currentCitizen.appointment_time}</p>
+                  </div>
+                </div>
+                <div style={{
+                  background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
+                  borderRadius: 14,
+                  padding: "14px 20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}>
+                  <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Token</span>
+                  <span style={{ fontSize: 32, fontWeight: 900, color: "#2563EB", letterSpacing: "0.04em" }}>{currentCitizen.appointment_id}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "24px 0" }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🪑</div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>Cabin Available</h2>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6B7280" }}>No citizen in cabin currently</p>
               </div>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" }}>Rahul Sharma</h2>
-                <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>Scholarship Query · 11:00 AM</p>
-              </div>
-            </div>
- 
-            <div style={{
-              background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
-              borderRadius: 14,
-              padding: "14px 20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}>
-              <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Token</span>
-              <span style={{ fontSize: 32, fontWeight: 900, color: "#2563EB", letterSpacing: "0.04em" }}>#1001</span>
-            </div>
+            )}
           </div>
- 
+
           {/* Next Citizen */}
           <div style={{
             background: "#fff",
@@ -249,37 +261,46 @@ export default function MDDashboard() {
                 ⏭ Next Citizen
               </span>
             </div>
- 
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-              <div style={{
-                width: 52, height: 52, borderRadius: "50%",
-                background: "linear-gradient(135deg,#D1FAE5,#ECFDF5)",
-                border: "2px solid #A7F3D0",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 22, fontWeight: 700, color: "#059669",
-              }}>
-                PP
+
+            {nextCitizen ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: "50%",
+                    background: "linear-gradient(135deg,#D1FAE5,#ECFDF5)",
+                    border: "2px solid #A7F3D0",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 18, fontWeight: 700, color: "#059669",
+                  }}>
+                    {nextCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" }}>{nextCitizen.citizen_name}</h2>
+                    <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>{nextCitizen.purpose} · {nextCitizen.appointment_time}</p>
+                  </div>
+                </div>
+                <div style={{
+                  background: "linear-gradient(135deg,#ECFDF5,#D1FAE5)",
+                  borderRadius: 14,
+                  padding: "14px 20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}>
+                  <span style={{ fontSize: 13, color: "#065F46", fontWeight: 600 }}>Token</span>
+                  <span style={{ fontSize: 32, fontWeight: 900, color: "#10B981", letterSpacing: "0.04em" }}>{nextCitizen.appointment_id}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "24px 0" }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>No One Waiting</h2>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6B7280" }}>Queue is clear right now</p>
               </div>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" }}>Priya Patil</h2>
-                <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>Education Support · 11:10 AM</p>
-              </div>
-            </div>
- 
-            <div style={{
-              background: "linear-gradient(135deg,#ECFDF5,#D1FAE5)",
-              borderRadius: 14,
-              padding: "14px 20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}>
-              <span style={{ fontSize: 13, color: "#065F46", fontWeight: 600 }}>Token</span>
-              <span style={{ fontSize: 32, fontWeight: 900, color: "#10B981", letterSpacing: "0.04em" }}>#1002</span>
-            </div>
+            )}
           </div>
         </div>
- 
+
         {/* ── EXECUTIVE MEETINGS ── */}
         <div style={{
           background: "#fff",
@@ -301,79 +322,120 @@ export default function MDDashboard() {
               padding: "5px 14px",
               borderRadius: 99,
               border: "1px solid #BFDBFE",
-            }}>2 Today</span>
+            }}>{meetings.length} Today</span>
           </div>
- 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            {executiveMeetings.map((meeting, index) => (
-              <div
-                key={index}
-                className="meeting-card"
-                style={{
-                  background: "linear-gradient(135deg,#F8FAFF,#F0F4FF)",
-                  padding: "22px 24px",
-                  borderRadius: 18,
-                  border: "1px solid #DBEAFE",
-                  boxShadow: "0 4px 16px rgba(37,99,235,0.07)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                      {index === 0 ? "Afternoon" : "Evening"}
-                    </p>
-                    <h3 style={{ margin: "4px 0 0", fontSize: 17, fontWeight: 800, color: "#111827" }}>{meeting.title}</h3>
-                  </div>
-                  <span style={{
-                    background: "#fff",
-                    color: "#2563EB",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    padding: "5px 12px",
-                    borderRadius: 99,
-                    border: "1px solid #BFDBFE",
-                    flexShrink: 0,
-                    marginLeft: 10,
-                  }}>{meeting.time}</span>
-                </div>
- 
-                <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14 }}>🏛️</span>
-                    <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.with}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14 }}>🎥</span>
-                    <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.mode}</span>
-                  </div>
-                </div>
- 
-                <button
-                  className="join-btn"
+
+          {meetings.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "#9CA3AF" }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>No upcoming meetings today</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+              {meetings.map((meeting, index) => (
+                <div
+                  key={meeting.id ?? index}
+                  className="meeting-card"
                   style={{
-                    background: "linear-gradient(135deg,#10B981,#059669)",
-                    color: "white",
-                    border: "none",
-                    padding: "11px 22px",
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    letterSpacing: "0.03em",
-                    boxShadow: "0 4px 12px rgba(16,185,129,0.35)",
-                    width: "100%",
+                    background: "linear-gradient(135deg,#F8FAFF,#F0F4FF)",
+                    padding: "22px 24px",
+                    borderRadius: 18,
+                    border: "1px solid #DBEAFE",
+                    boxShadow: "0 4px 16px rgba(37,99,235,0.07)",
                   }}
                 >
-                  🔗 Join Meeting
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                        {index === 0 ? "Afternoon" : "Evening"}
+                      </p>
+                      <h3 style={{ margin: "4px 0 0", fontSize: 17, fontWeight: 800, color: "#111827" }}>{meeting.title}</h3>
+                    </div>
+                    <span style={{
+                      background: "#fff",
+                      color: "#2563EB",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      border: "1px solid #BFDBFE",
+                      flexShrink: 0,
+                      marginLeft: 10,
+                    }}>{meeting.meeting_time}</span>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>🏛️</span>
+                      <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.meeting_with}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>🎥</span>
+                      <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.mode ?? "Google Meet"}</span>
+                    </div>
+                    {meeting.status && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14 }}>📌</span>
+                        <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.status}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {meeting.meeting_link ? (
+                    <a
+                      href={meeting.meeting_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="join-btn"
+                      style={{
+                        display: "block",
+                        background: "linear-gradient(135deg,#10B981,#059669)",
+                        color: "white",
+                        border: "none",
+                        padding: "11px 22px",
+                        borderRadius: 12,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        letterSpacing: "0.03em",
+                        boxShadow: "0 4px 12px rgba(16,185,129,0.35)",
+                        width: "100%",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      🔗 Join Meeting
+                    </a>
+                  ) : (
+                    <button
+                      className="join-btn"
+                      style={{
+                        background: "linear-gradient(135deg,#10B981,#059669)",
+                        color: "white",
+                        border: "none",
+                        padding: "11px 22px",
+                        borderRadius: 12,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        letterSpacing: "0.03em",
+                        boxShadow: "0 4px 12px rgba(16,185,129,0.35)",
+                        width: "100%",
+                      }}
+                    >
+                      🔗 Join Meeting
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
- 
+
         {/* ── FOCUS + UPCOMING ── */}
         <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 18 }}>
- 
+
           {/* Today's Focus */}
           <div style={{
             background: "#fff",
@@ -383,29 +445,28 @@ export default function MDDashboard() {
           }}>
             <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Overview</p>
             <h2 style={{ margin: "0 0 24px", fontSize: 20, fontWeight: 800, color: "#111827" }}>Today's Focus</h2>
- 
-            <FocusItem title="Citizens Waiting" value="4" color="#F59E0B" bg="#FEF3C7" />
-            <FocusItem title="Meetings Today" value="3" color="#2563EB" bg="#DBEAFE" />
-            <FocusItem title="Completed Citizens" value="12" color="#10B981" bg="#D1FAE5" />
- 
-            {/* Mini progress */}
+
+            <FocusItem title="Citizens Waiting" value={waitingCitizens.length} color="#F59E0B" bg="#FEF3C7" />
+            <FocusItem title="Meetings Today" value={meetings.length} color="#2563EB" bg="#DBEAFE" />
+            <FocusItem title="Completed Citizens" value={completedCount} color="#10B981" bg="#D1FAE5" />
+
             <div style={{ marginTop: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>Daily Progress</span>
-                <span style={{ fontSize: 12, color: "#2563EB", fontWeight: 700 }}>67%</span>
+                <span style={{ fontSize: 12, color: "#2563EB", fontWeight: 700 }}>{progressPct}%</span>
               </div>
               <div style={{ height: 8, background: "#F3F4F6", borderRadius: 99, overflow: "hidden" }}>
                 <div style={{
                   height: "100%",
-                  width: "67%",
+                  width: `${progressPct}%`,
                   background: "linear-gradient(90deg,#2563EB,#7C3AED)",
                   borderRadius: 99,
                 }} />
               </div>
-              <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 6 }}>12 of 18 citizens completed</p>
+              <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 6 }}>{completedCount} of {totalCount} citizens completed</p>
             </div>
           </div>
- 
+
           {/* Upcoming Citizens */}
           <div style={{
             background: "#fff",
@@ -426,78 +487,86 @@ export default function MDDashboard() {
                 padding: "5px 14px",
                 borderRadius: 99,
                 border: "1px solid #FDE68A",
-              }}>3 in queue</span>
+              }}>{waitingCitizens.length} in queue</span>
             </div>
- 
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#F8FAFC" }}>
-                  <th style={{ ...th, borderRadius: "10px 0 0 10px", paddingLeft: 14 }}>Token</th>
-                  <th style={th}>Citizen</th>
-                  <th style={th}>Purpose</th>
-                  <th style={{ ...th, borderRadius: "0 10px 10px 0", paddingRight: 14 }}>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {upcomingCitizens.map((citizen, index) => (
-                  <tr key={index} className="citizen-row" style={{ borderRadius: 10, cursor: "default" }}>
-                    <td style={{ ...td, paddingLeft: 14 }}>
-                      <span style={{
-                        background: "#EFF6FF",
-                        color: "#2563EB",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        padding: "4px 10px",
-                        borderRadius: 99,
-                        border: "1px solid #BFDBFE",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {citizen.token}
-                      </span>
-                    </td>
-                    <td style={td}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{
-                          width: 32, height: 32, borderRadius: "50%",
-                          background: `hsl(${(index * 80 + 200)},70%,90%)`,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 12, fontWeight: 700,
-                          color: `hsl(${(index * 80 + 200)},60%,40%)`,
-                          flexShrink: 0,
-                        }}>
-                          {citizen.name.split(" ").map(n => n[0]).join("")}
-                        </div>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>{citizen.name}</span>
-                      </div>
-                    </td>
-                    <td style={td}>
-                      <span style={{
-                        background: "#F3F4F6",
-                        color: "#374151",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        padding: "4px 10px",
-                        borderRadius: 8,
-                      }}>
-                        {citizen.purpose}
-                      </span>
-                    </td>
-                    <td style={{ ...td, paddingRight: 14 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7280" }}>🕐 {citizen.time}</span>
-                    </td>
+
+            {waitingCitizens.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "#9CA3AF" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>🎉</div>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>No waiting citizens</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12 }}>Queue is clear</p>
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC" }}>
+                    <th style={{ ...th, borderRadius: "10px 0 0 10px", paddingLeft: 14 }}>Token</th>
+                    <th style={th}>Citizen</th>
+                    <th style={th}>Purpose</th>
+                    <th style={{ ...th, borderRadius: "0 10px 10px 0", paddingRight: 14 }}>Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {waitingCitizens.map((citizen, index) => (
+                    <tr key={citizen.appointment_id ?? index} className="citizen-row" style={{ borderRadius: 10, cursor: "default" }}>
+                      <td style={{ ...td, paddingLeft: 14 }}>
+                        <span style={{
+                          background: "#EFF6FF",
+                          color: "#2563EB",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          padding: "4px 10px",
+                          borderRadius: 99,
+                          border: "1px solid #BFDBFE",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {citizen.appointment_id}
+                        </span>
+                      </td>
+                      <td style={td}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: "50%",
+                            background: `hsl(${(index * 80 + 200)},70%,90%)`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 12, fontWeight: 700,
+                            color: `hsl(${(index * 80 + 200)},60%,40%)`,
+                            flexShrink: 0,
+                          }}>
+                            {citizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>{citizen.citizen_name}</span>
+                        </div>
+                      </td>
+                      <td style={td}>
+                        <span style={{
+                          background: "#F3F4F6",
+                          color: "#374151",
+                          fontSize: 12,
+                          fontWeight: 500,
+                          padding: "4px 10px",
+                          borderRadius: 8,
+                        }}>
+                          {citizen.purpose}
+                        </span>
+                      </td>
+                      <td style={{ ...td, paddingRight: 14 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7280" }}>🕐 {citizen.appointment_time}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
- 
+
 // ── Sub-components ──────────────────────────────────────────────────────────────
- 
+
 function StatCard({ title, value, icon, gradient, shadow }) {
   return (
     <div
@@ -512,7 +581,6 @@ function StatCard({ title, value, icon, gradient, shadow }) {
         overflow: "hidden",
       }}
     >
-      {/* Decorative circle */}
       <div style={{
         position: "absolute", top: -20, right: -20,
         width: 90, height: 90, borderRadius: "50%",
@@ -532,7 +600,7 @@ function StatCard({ title, value, icon, gradient, shadow }) {
     </div>
   );
 }
- 
+
 function FocusItem({ title, value, color, bg }) {
   return (
     <div style={{
@@ -556,7 +624,7 @@ function FocusItem({ title, value, color, bg }) {
     </div>
   );
 }
- 
+
 const th = {
   textAlign: "left",
   padding: "10px 12px",
@@ -566,7 +634,7 @@ const th = {
   textTransform: "uppercase",
   letterSpacing: "0.06em",
 };
- 
+
 const td = {
   padding: "14px 12px",
   borderBottom: "1px solid #F3F4F6",
