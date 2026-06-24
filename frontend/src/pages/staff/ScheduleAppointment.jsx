@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "../../lib/supabase";
 
 const SLOTS = [
   "09:00 AM", "09:10 AM", "09:20 AM", "09:30 AM",
@@ -9,13 +10,27 @@ const SLOTS = [
   "03:10 PM", "03:20 PM", "03:30 PM", "03:40 PM",
 ];
 
-const BUSY_SLOTS = ["09:10 AM", "09:30 AM", "10:00 AM", "11:00 AM"];
-
 export default function ScheduleAppointment() {
-  const [form, setForm] = useState({ name: "", mobile: "", purpose: "", officer: "", date: "", slot: "" });
+  const [form, setForm] = useState({ name: "", mobile: "", purpose: "", officer: "", date: "", slot: "", location: "" });
   const [created, setCreated] = useState(false);
-  const [token] = useState(Math.floor(Math.random() * 900) + 100);
+  const [appointmentId] = useState("SHA-" + Math.floor(1000 + Math.random() * 9000));
   const [errors, setErrors] = useState({});
+  const [busySlots, setBusySlots] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (form.date) fetchBusySlots(form.date);
+    else setBusySlots([]);
+  }, [form.date]);
+
+  const fetchBusySlots = async (date) => {
+    const { data, error } = await supabase
+      .from("appointments")
+      .select("appointment_time")
+      .eq("appointment_date", date);
+    if (error) { console.log(error); return; }
+    setBusySlots((data || []).map(a => a.appointment_time));
+  };
 
   const handleChange = e => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -33,16 +48,37 @@ export default function ScheduleAppointment() {
     return e;
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
+
+    setSaving(true);
+    const { error } = await supabase
+      .from("appointments")
+      .insert([{
+        appointment_id: appointmentId,
+        citizen_name: form.name,
+        mobile: form.mobile,
+        purpose: form.purpose,
+        officer_name: form.officer,
+        appointment_date: form.date,
+        appointment_time: form.slot,
+        location: form.location,
+        status: "Waiting",
+        booking_source: "Walk-In",
+      }]);
+
+    setSaving(false);
+
+    if (error) { console.log(error); alert("Failed to save: " + error.message); return; }
     setCreated(true);
   };
 
   const handleReset = () => {
-    setForm({ name: "", mobile: "", purpose: "", officer: "", date: "", slot: "" });
+    setForm({ name: "", mobile: "", purpose: "", officer: "", date: "", slot: "", location: "" });
     setCreated(false);
     setErrors({});
+    setBusySlots([]);
   };
 
   if (created) {
@@ -56,7 +92,7 @@ export default function ScheduleAppointment() {
           <div style={styles.summaryCard}>
             <div style={styles.tokenBadge}>
               <p style={styles.tokenLabel}>APPOINTMENT TOKEN</p>
-              <p style={styles.tokenNum}>SHA-{token}</p>
+              <p style={styles.tokenNum}>{appointmentId}</p>
             </div>
             <div style={styles.summaryGrid}>
               <SummaryRow icon="👤" label="Citizen" value={form.name} />
@@ -65,12 +101,13 @@ export default function ScheduleAppointment() {
               <SummaryRow icon="🏛️" label="Officer" value={form.officer} />
               <SummaryRow icon="📅" label="Date" value={form.date} />
               <SummaryRow icon="🕐" label="Time" value={form.slot} />
+              {form.location && <SummaryRow icon="📍" label="Location" value={form.location} />}
+              <SummaryRow icon="🚶" label="Booking Source" value="Walk-In" />
             </div>
           </div>
 
           <div style={styles.successActions}>
             <div style={styles.notifRow}>
-              <span style={styles.notifItem}>✅ Citizen notified via WhatsApp</span>
               <span style={styles.notifItem}>✅ Added to live queue</span>
               <span style={styles.notifItem}>✅ Token generated</span>
             </div>
@@ -86,8 +123,8 @@ export default function ScheduleAppointment() {
       <div style={styles.pageHeader}>
         <div>
           <p style={styles.eyebrow}>STAFF PORTAL</p>
-          <h1 style={styles.title}>Schedule Appointment</h1>
-          <p style={styles.sub}>Create appointments manually for walk-in visitors.</p>
+          <h1 style={styles.title}>Walk-In Registration</h1>
+          <p style={styles.sub}>Create appointments manually for citizens physically visiting the office.</p>
         </div>
       </div>
 
@@ -133,7 +170,6 @@ export default function ScheduleAppointment() {
                 style={{ ...styles.input, borderColor: errors.officer ? "#FCA5A5" : "#E2E8F0" }}>
                 <option value="">Select officer</option>
                 <option>Leena Bansod</option>
-                <option>Anshul Pagar</option>
               </select>
             </Field>
             <Field label="Appointment Date" required error={errors.date}>
@@ -145,6 +181,15 @@ export default function ScheduleAppointment() {
                 style={{ ...styles.input, borderColor: errors.date ? "#FCA5A5" : "#E2E8F0" }}
               />
             </Field>
+            <Field label="Location / Arriving From">
+              <input
+                name="location"
+                value={form.location}
+                onChange={handleChange}
+                placeholder="Enter city, village or area"
+                style={styles.input}
+              />
+            </Field>
           </div>
 
           {/* Time Slot */}
@@ -154,6 +199,11 @@ export default function ScheduleAppointment() {
               <h2 style={styles.sectionTitle}>Select Time Slot</h2>
             </div>
             {errors.slot && <p style={styles.errorText}>{errors.slot}</p>}
+            {!form.date && (
+              <p style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px" }}>
+                Select a date above to see slot availability.
+              </p>
+            )}
             <div style={styles.slotLegend}>
               <span style={styles.legendDot("white","#E2E8F0")} /> Available &nbsp;&nbsp;
               <span style={styles.legendDot("#EFF6FF","#2563EB")} /> Selected &nbsp;&nbsp;
@@ -161,7 +211,7 @@ export default function ScheduleAppointment() {
             </div>
             <div style={styles.slotGrid}>
               {SLOTS.map(slot => {
-                const isBusy = BUSY_SLOTS.includes(slot);
+                const isBusy = busySlots.includes(slot);
                 const isSelected = form.slot === slot;
                 return (
                   <button
@@ -185,8 +235,8 @@ export default function ScheduleAppointment() {
             </div>
           </div>
 
-          <button onClick={handleCreate} style={styles.submitBtn}>
-            Create Appointment →
+          <button onClick={handleCreate} disabled={saving} style={{ ...styles.submitBtn, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}>
+            {saving ? "Saving..." : "Create Appointment →"}
           </button>
         </div>
 
@@ -212,6 +262,8 @@ export default function ScheduleAppointment() {
                 <PreviewRow label="Officer" value={form.officer || "—"} />
                 <PreviewRow label="Date" value={form.date || "—"} />
                 <PreviewRow label="Time" value={form.slot || "—"} />
+                <PreviewRow label="Location" value={form.location || "—"} />
+                <PreviewRow label="Source" value="Walk-In" />
               </div>
             </div>
           </div>
@@ -244,7 +296,7 @@ function SummaryRow({ icon, label, value }) {
   return (
     <div style={{ display: "flex", gap: "12px", padding: "12px 0", borderBottom: "1px solid #F1F5F9" }}>
       <span style={{ fontSize: "16px", width: "24px" }}>{icon}</span>
-      <span style={{ color: "#64748B", fontSize: "14px", flex: "0 0 80px" }}>{label}</span>
+      <span style={{ color: "#64748B", fontSize: "14px", flex: "0 0 120px" }}>{label}</span>
       <span style={{ fontWeight: "700", color: "#111827", fontSize: "14px" }}>{value}</span>
     </div>
   );
@@ -279,7 +331,7 @@ const styles = {
   slotBtn: { padding: "12px 8px", borderRadius: "10px", fontSize: "13px", fontWeight: "600", position: "relative", transition: "all 0.15s" },
   busyDot: { display: "block", width: "6px", height: "6px", borderRadius: "50%", background: "#EF4444", position: "absolute", top: "6px", right: "6px" },
   errorText: { color: "#DC2626", fontSize: "12px", margin: "0 0 12px" },
-  submitBtn: { background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", border: "none", padding: "14px 28px", borderRadius: "12px", fontSize: "15px", fontWeight: "700", cursor: "pointer", letterSpacing: "0.3px" },
+  submitBtn: { background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", border: "none", padding: "14px 28px", borderRadius: "12px", fontSize: "15px", fontWeight: "700", letterSpacing: "0.3px" },
   previewPanel: { display: "flex", flexDirection: "column", gap: "16px" },
   previewCard: { background: "#fff", borderRadius: "16px", padding: "24px", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)" },
   previewEyebrow: { margin: "0 0 16px", fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", color: "#94A3B8" },
