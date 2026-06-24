@@ -71,6 +71,7 @@ export default function ExecutiveMeetings() {
       console.log(apptError);
     }
 
+    // Conflict: appointment_time falls between meeting_time and meeting_end_time (inclusive)
     const conflicts = (appts || []).filter(a => {
       const t = a.appointment_time;
       return t >= form.meeting_time && t <= form.meeting_end_time;
@@ -104,10 +105,10 @@ export default function ExecutiveMeetings() {
   };
 
   const handleProceed = async () => {
-    // Save the meeting
+    // Save the meeting first
     await saveMeeting(pendingSave);
 
-    // Update conflicting appointments to Reschedule Required
+    // Update conflicting appointments to Reschedule Required (DO NOT delete or cancel)
     const ids = conflictAppointments.map(a => a.id);
     const { error } = await supabase
       .from("appointments")
@@ -126,6 +127,7 @@ export default function ExecutiveMeetings() {
     setConflictModal(false);
     setConflictAppointments([]);
     setPendingSave(null);
+    // Meeting is NOT saved
   };
 
   const closeForm = () => {
@@ -203,12 +205,12 @@ export default function ExecutiveMeetings() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — fixed: use m.meet_link (correct field name) */}
       <div style={styles.statsRow}>
         <StatCard label="Total Meetings" value={meetings.length} color="#2563EB" />
         <StatCard label="Upcoming" value={meetings.filter(m => m.status === "Upcoming").length} color="#F59E0B" />
         <StatCard label="Completed" value={meetings.filter(m => m.status === "Completed").length} color="#10B981" />
-        <StatCard label="Google Meet" value={meetings.filter(m => m.meeting_links).length} color="#6366F1" />
+        <StatCard label="Google Meet" value={meetings.filter(m => m.meet_link).length} color="#6366F1" />
       </div>
 
       {/* Filter tabs */}
@@ -349,7 +351,7 @@ export default function ExecutiveMeetings() {
             </div>
             <div style={styles.modalBody}>
               <p style={{ margin: "0 0 16px", fontSize: "14px", color: "#374151" }}>
-                This executive meeting overlaps with the following citizen appointments:
+                This executive meeting overlaps with existing citizen appointments:
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
                 {conflictAppointments.map(a => (
