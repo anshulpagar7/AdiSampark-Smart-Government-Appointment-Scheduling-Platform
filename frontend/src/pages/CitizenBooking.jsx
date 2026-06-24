@@ -52,6 +52,74 @@ function timeToMinutes(time) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+// ─── Holiday: Office Closed Card ──────────────────────────────────────────────
+
+function OfficeClosedCard({ reason, dateStr }) {
+  const displayDate = dateStr
+    ? new Date(dateStr).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    : "";
+
+  return (
+    <div
+      style={{
+        background: "#FEF2F2",
+        border: "1.5px solid #FECACA",
+        borderRadius: 14,
+        padding: "20px 22px",
+        marginBottom: 16,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        gap: 6,
+      }}
+    >
+      <span style={{ fontSize: 28 }}>🚫</span>
+      <p
+        style={{
+          margin: 0,
+          fontWeight: 800,
+          fontSize: 16,
+          color: "#DC2626",
+        }}
+      >
+        Office Closed
+      </p>
+      {reason && (
+        <p
+          style={{
+            margin: 0,
+            fontWeight: 600,
+            fontSize: 15,
+            color: "#991B1B",
+          }}
+        >
+          {reason}
+        </p>
+      )}
+      {displayDate && (
+        <p style={{ margin: 0, fontSize: 13, color: "#B91C1C" }}>
+          {displayDate}
+        </p>
+      )}
+      <p
+        style={{
+          margin: "4px 0 0",
+          fontSize: 13,
+          color: "#6B7280",
+          fontWeight: 500,
+        }}
+      >
+        Please select another date.
+      </p>
+    </div>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ProgressBar({ step, t }) {
@@ -259,9 +327,95 @@ export default function CitizenBooking() {
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
+  // ── Holiday state ──────────────────────────────────────────────────────────
+  const [holidays, setHolidays] = useState([]);
+
   const [appointmentId] = useState("SHA-" + Math.floor(1000 + Math.random() * 9000));
 
   const t = translations[language];
+
+  // ── Fetch holidays on mount ────────────────────────────────────────────────
+  useEffect(() => {
+    async function fetchHolidays() {
+      const { data, error } = await supabase
+        .from("holidays")
+        .select("id, holiday_name, holiday_date, holiday_type, category");
+      if (!error && data) {
+        setHolidays(data);
+      }
+    }
+    fetchHolidays();
+  }, []);
+
+  // ── Holiday / Weekend helpers ──────────────────────────────────────────────
+
+  /**
+   * Returns the matching holiday record for a given date string (YYYY-MM-DD),
+   * or null if the date is not a holiday.
+   */
+  function getHolidayForDate(dateStr) {
+    if (!dateStr) return null;
+    return holidays.find((h) => h.holiday_date === dateStr) || null;
+  }
+
+  /**
+   * Returns true if the given date string (YYYY-MM-DD) falls on a Saturday or Sunday.
+   */
+  function isWeekend(dateStr) {
+    if (!dateStr) return false;
+    // Use UTC parsing to avoid timezone shifting the day
+    const parts = dateStr.split("-");
+    const d = new Date(
+      parseInt(parts[0], 10),
+      parseInt(parts[1], 10) - 1,
+      parseInt(parts[2], 10)
+    );
+    const day = d.getDay(); // 0 = Sun, 6 = Sat
+    return day === 0 || day === 6;
+  }
+
+  /**
+   * Determines if the office is closed for the effective booking date.
+   * Returns { closed: boolean, reason: string|null }
+   * Order: holiday check → weekend check.
+   */
+  function getOfficeStatus(dateStr) {
+    if (!dateStr) return { closed: false, reason: null };
+
+    // 1. Holiday check
+    const holiday = getHolidayForDate(dateStr);
+    if (holiday) {
+      return { closed: true, reason: holiday.holiday_name };
+    }
+
+    // 2. Weekend check
+    if (isWeekend(dateStr)) {
+      const parts = dateStr.split("-");
+      const d = new Date(
+        parseInt(parts[0], 10),
+        parseInt(parts[1], 10) - 1,
+        parseInt(parts[2], 10)
+      );
+      const dayName = d.getDay() === 0 ? "Sunday" : "Saturday";
+      return { closed: true, reason: dayName };
+    }
+
+    return { closed: false, reason: null };
+  }
+
+  // ── Derive effective booking date ──────────────────────────────────────────
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const effectiveDateStr =
+    appointmentType === "today"
+      ? todayStr
+      : appointmentType === "future"
+      ? selectedDate
+      : "";
+
+  const officeStatus = getOfficeStatus(effectiveDateStr);
+
+  // ── Existing logic (untouched) ─────────────────────────────────────────────
 
   const saveAppointment = async () => {
     const bookingDate =
@@ -294,8 +448,6 @@ export default function CitizenBooking() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
-
-  const todayStr = new Date().toISOString().split("T")[0];
 
   const isToday =
     appointmentType === "today" ||
@@ -507,9 +659,27 @@ export default function CitizenBooking() {
               fontFamily: "inherit",
             }}
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              // Clear any previously selected slot when date changes
+              setSelectedSlot("");
+            }}
           />
-          <PrimaryButton onClick={() => setStep(4)} disabled={!selectedDate}>
+
+          {/* ── Holiday / Weekend closed message for Step 3 ── */}
+          {selectedDate && officeStatus.closed && (
+            <div style={{ marginTop: 16 }}>
+              <OfficeClosedCard
+                reason={officeStatus.reason}
+                dateStr={effectiveDateStr}
+              />
+            </div>
+          )}
+
+          <PrimaryButton
+            onClick={() => setStep(4)}
+            disabled={!selectedDate || officeStatus.closed}
+          >
             {t.continue}
           </PrimaryButton>
         </Card>
@@ -521,75 +691,88 @@ export default function CitizenBooking() {
           <StepHeading>{t.selectSlot}</StepHeading>
           <OfficerBadge t={t} />
 
-          {!hasAvailableSlots && (
-            <div
-              style={{
-                background: "#FEF2F2",
-                border: "1.5px solid #FECACA",
-                borderRadius: 12,
-                padding: "16px 20px",
-                marginBottom: 16,
-                textAlign: "center",
-                color: "#DC2626",
-                fontWeight: 600,
-                fontSize: 14,
-              }}
-            >
-              ⚠️ No more slots available for today. Please book for a future date.
-            </div>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-            {visibleSlots.map((s, i) => {
-              if (s.disabled) {
-                const hasAfternoonSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "afternoon");
-                const hasMorningSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "morning");
-                if (!hasMorningSlots || !hasAfternoonSlots) return null;
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      gridColumn: "1 / -1",
-                      background: "#FEF3C7",
-                      color: "#92400E",
-                      borderRadius: 10,
-                      padding: "10px",
-                      textAlign: "center",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    🍽 {t.lunchBreak}
-                  </div>
-                );
-              }
-              const isSelected = selectedSlot === s.time;
-              return (
-                <button
-                  key={i}
-                  onClick={() => setSelectedSlot(s.time)}
+          {/* ── Holiday / Weekend closed message for Step 4 ── */}
+          {officeStatus.closed ? (
+            <OfficeClosedCard
+              reason={officeStatus.reason}
+              dateStr={effectiveDateStr}
+            />
+          ) : (
+            <>
+              {!hasAvailableSlots && (
+                <div
                   style={{
-                    padding: "12px 4px",
-                    borderRadius: 10,
-                    border: `2px solid ${isSelected ? "#2563EB" : "#E5E7EB"}`,
-                    background: isSelected ? "linear-gradient(135deg,#2563EB,#1E3A8A)" : "#F9FAFB",
-                    color: isSelected ? "#fff" : "#374151",
-                    fontWeight: isSelected ? 700 : 500,
-                    fontSize: 13,
-                    cursor: "pointer",
-                    transform: isSelected ? "scale(1.04)" : "scale(1)",
-                    transition: "all 0.15s",
-                    boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.3)" : "none",
+                    background: "#FEF2F2",
+                    border: "1.5px solid #FECACA",
+                    borderRadius: 12,
+                    padding: "16px 20px",
+                    marginBottom: 16,
+                    textAlign: "center",
+                    color: "#DC2626",
+                    fontWeight: 600,
+                    fontSize: 14,
                   }}
                 >
-                  {s.time}
-                </button>
-              );
-            })}
-          </div>
+                  ⚠️ No more slots available for today. Please book for a future date.
+                </div>
+              )}
 
-          <PrimaryButton onClick={() => setStep(5)} disabled={!selectedSlot || !hasAvailableSlots}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                {visibleSlots.map((s, i) => {
+                  if (s.disabled) {
+                    const hasAfternoonSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "afternoon");
+                    const hasMorningSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "morning");
+                    if (!hasMorningSlots || !hasAfternoonSlots) return null;
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          gridColumn: "1 / -1",
+                          background: "#FEF3C7",
+                          color: "#92400E",
+                          borderRadius: 10,
+                          padding: "10px",
+                          textAlign: "center",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        🍽 {t.lunchBreak}
+                      </div>
+                    );
+                  }
+                  const isSelected = selectedSlot === s.time;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedSlot(s.time)}
+                      style={{
+                        padding: "12px 4px",
+                        borderRadius: 10,
+                        border: `2px solid ${isSelected ? "#2563EB" : "#E5E7EB"}`,
+                        background: isSelected ? "linear-gradient(135deg,#2563EB,#1E3A8A)" : "#F9FAFB",
+                        color: isSelected ? "#fff" : "#374151",
+                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        transform: isSelected ? "scale(1.04)" : "scale(1)",
+                        transition: "all 0.15s",
+                        boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.3)" : "none",
+                      }}
+                    >
+                      {s.time}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          <PrimaryButton
+            onClick={() => setStep(5)}
+            disabled={!selectedSlot || !hasAvailableSlots || officeStatus.closed}
+          >
             {t.continue}
           </PrimaryButton>
         </Card>
