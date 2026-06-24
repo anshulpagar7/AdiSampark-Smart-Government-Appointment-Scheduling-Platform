@@ -11,6 +11,58 @@ function timeToMinutes(time) {
   return Number(hours) * 60 + Number(minutes);
 }
 
+function todayStr() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDays(dateStr, delta) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + delta);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatSelectedDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+// Compute the effective status for a meeting based on date/time, without
+// overriding a manually set "Cancelled" status.
+function getEffectiveStatus(m) {
+  if (m.status === "Cancelled") return "Cancelled";
+  if (!m.meeting_date) return m.status || "Upcoming";
+
+  const today = todayStr();
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  if (m.meeting_date < today) {
+    return "Completed";
+  }
+
+  if (m.meeting_date > today) {
+    return "Upcoming";
+  }
+
+  // meeting_date === today
+  const startMinutes = timeToMinutes(m.meeting_time);
+  const endMinutes = timeToMinutes(m.meeting_end_time);
+
+  if (nowMinutes < startMinutes) return "Upcoming";
+  if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) return "Ongoing";
+  if (nowMinutes > endMinutes) return "Completed";
+
+  return m.status || "Upcoming";
+}
+
 const EMPTY_FORM = {
   title: "",
   meeting_with: "",
@@ -29,6 +81,7 @@ export default function ExecutiveMeetings() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [filter, setFilter] = useState("All");
+  const [selectedDate, setSelectedDate] = useState(todayStr());
 
   // Conflict modal state
   const [conflictModal, setConflictModal] = useState(false);
@@ -37,6 +90,15 @@ export default function ExecutiveMeetings() {
 
   useEffect(() => {
     fetchMeetings();
+  }, []);
+
+  // Re-evaluate auto statuses every 30s so Ongoing/Completed stay current
+  // without needing a page refresh.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMeetings(prev => [...prev]);
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   async function fetchMeetings() {
@@ -64,6 +126,17 @@ export default function ExecutiveMeetings() {
     if (!form.meeting_date) e.meeting_date = "Date is required";
     if (!form.meeting_time) e.meeting_time = "Start time is required";
     if (!form.meeting_end_time) e.meeting_end_time = "End time is required";
+
+    // Prevent scheduling meetings in the past for today's date
+    if (form.meeting_date === todayStr() && form.meeting_time) {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = timeToMinutes(form.meeting_time);
+      if (startMinutes < nowMinutes) {
+        e.meeting_time = "Cannot schedule meetings in the past.";
+      }
+    }
+
     return e;
   };
 
@@ -164,12 +237,13 @@ export default function ExecutiveMeetings() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
+  // Delete replaced with Cancel Meeting — only updates status, never deletes rows.
+  const handleCancelMeeting = async (id) => {
     const { error } = await supabase
       .from("executive_meetings")
-      .delete()
+      .update({ status: "Cancelled" })
       .eq("id", id);
-    if (error) { console.log(error); alert("Failed to delete: " + error.message); return; }
+    if (error) { console.log(error); alert("Failed to cancel: " + error.message); return; }
     fetchMeetings();
   };
 
@@ -182,7 +256,19 @@ export default function ExecutiveMeetings() {
     fetchMeetings();
   };
 
-  const filtered = filter === "All" ? meetings : meetings.filter(m => m.status === filter);
+  // Attach effective (auto-computed) status to each meeting without mutating Supabase data
+  const meetingsWithEffectiveStatus = meetings.map(m => ({
+    ...m,
+    _effectiveStatus: getEffectiveStatus(m),
+  }));
+
+  // Filter by selected date first (historical data stays in Supabase, only display is filtered)
+  const dateFiltered = meetingsWithEffectiveStatus.filter(m => m.meeting_date === selectedDate);
+
+  // Then apply status filter tab
+  const filtered = filter === "All"
+    ? dateFiltered
+    : dateFiltered.filter(m => m._effectiveStatus === filter);
 
   const modeStyle = {
     "Google Meet": { bg: "#EFF6FF", color: "#2563EB", icon: "🎥" },
@@ -190,6 +276,7 @@ export default function ExecutiveMeetings() {
   };
   const statusStyle = {
     Upcoming: { bg: "#FEF3C7", color: "#D97706" },
+    Ongoing: { bg: "#DBEAFE", color: "#1D4ED8" },
     Completed: { bg: "#ECFDF5", color: "#059669" },
     Cancelled: { bg: "#FEF2F2", color: "#DC2626" },
   };
@@ -204,7 +291,7 @@ export default function ExecutiveMeetings() {
           <h1 style={styles.title}>Executive Meetings</h1>
           <p style={styles.sub}>Manage meetings scheduled for the Managing Director.</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_FORM); setErrors({}); }} style={styles.newBtn}>
+        <button onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM, meeting_date: selectedDate }); setErrors({}); }} style={styles.newBtn}>
           + Schedule Meeting
         </button>
       </div>
@@ -217,17 +304,36 @@ export default function ExecutiveMeetings() {
         </div>
       </div>
 
+      {/* Date Navigator */}
+      <div style={styles.dateNav}>
+        <button onClick={() => setSelectedDate(d => addDays(d, -1))} style={styles.dateNavArrow}>◀</button>
+        <div style={styles.dateNavCenter}>
+          <span style={styles.dateNavIcon}>📅</span>
+          <span style={styles.dateNavLabel}>{formatSelectedDate(selectedDate)}</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            style={styles.dateNavPicker}
+          />
+          {selectedDate !== todayStr() && (
+            <button onClick={() => setSelectedDate(todayStr())} style={styles.dateNavToday}>Today</button>
+          )}
+        </div>
+        <button onClick={() => setSelectedDate(d => addDays(d, 1))} style={styles.dateNavArrow}>▶</button>
+      </div>
+
       {/* Stats — fixed: use m.meet_link (correct field name) */}
       <div style={styles.statsRow}>
         <StatCard label="Total Meetings" value={meetings.length} color="#2563EB" />
-        <StatCard label="Upcoming" value={meetings.filter(m => m.status === "Upcoming").length} color="#F59E0B" />
-        <StatCard label="Completed" value={meetings.filter(m => m.status === "Completed").length} color="#10B981" />
+        <StatCard label="Upcoming" value={meetingsWithEffectiveStatus.filter(m => m._effectiveStatus === "Upcoming").length} color="#F59E0B" />
+        <StatCard label="Completed" value={meetingsWithEffectiveStatus.filter(m => m._effectiveStatus === "Completed").length} color="#10B981" />
         <StatCard label="Google Meet" value={meetings.filter(m => m.meet_link).length} color="#6366F1" />
       </div>
 
       {/* Filter tabs */}
       <div style={styles.filterRow}>
-        {["All", "Upcoming", "Completed"].map(f => (
+        {["All", "Upcoming", "Ongoing", "Completed", "Cancelled"].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{ ...styles.filterBtn, background: filter === f ? "#2563EB" : "#fff", color: filter === f ? "#fff" : "#64748B", borderColor: filter === f ? "#2563EB" : "#E2E8F0" }}>
             {f}
           </button>
@@ -239,7 +345,8 @@ export default function ExecutiveMeetings() {
         {filtered.map(m => {
           const mode = getModeFromLink(m.meet_link);
           const ms = modeStyle[mode] || { bg: "#F1F5F9", color: "#64748B", icon: "📅" };
-          const ss = statusStyle[m.status] || { bg: "#F1F5F9", color: "#64748B" };
+          const effectiveStatus = m._effectiveStatus;
+          const ss = statusStyle[effectiveStatus] || { bg: "#F1F5F9", color: "#64748B" };
           const dateParts = (m.meeting_date || "").split("-");
           const dateObj = dateParts.length === 3 ? new Date(m.meeting_date) : null;
           const day = dateObj ? dateObj.getDate() : "—";
@@ -247,7 +354,7 @@ export default function ExecutiveMeetings() {
           const year = dateObj ? dateObj.getFullYear() : "";
 
           return (
-            <div key={m.id} style={{ ...styles.meetingCard, borderLeft: `4px solid ${m.status === "Completed" ? "#10B981" : "#2563EB"}` }}>
+            <div key={m.id} style={{ ...styles.meetingCard, borderLeft: `4px solid ${effectiveStatus === "Completed" ? "#10B981" : "#2563EB"}` }}>
               <div style={styles.meetingCardTop}>
                 <div style={styles.meetingCardLeft}>
                   <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
@@ -255,7 +362,7 @@ export default function ExecutiveMeetings() {
                       {ms.icon} {mode}
                     </span>
                     <span style={{ ...styles.statusBadge, background: ss.bg, color: ss.color }}>
-                      {m.status}
+                      {effectiveStatus}
                     </span>
                   </div>
                   <h2 style={styles.meetingTitle}>{m.title}</h2>
@@ -287,10 +394,12 @@ export default function ExecutiveMeetings() {
                   <a href={m.meet_link} target="_blank" rel="noreferrer" style={styles.joinBtn}>🎥 Join Meet</a>
                 )}
                 <button onClick={() => handleEdit(m)} style={styles.editBtn}>✏️ Edit</button>
-                {m.status !== "Completed" && (
+                {effectiveStatus !== "Completed" && effectiveStatus !== "Cancelled" && (
                   <button onClick={() => markCompleted(m.id)} style={styles.completeBtn}>✓ Mark Completed</button>
                 )}
-                <button onClick={() => handleDelete(m.id)} style={styles.deleteBtn}>🗑 Delete</button>
+                {effectiveStatus !== "Cancelled" && (
+                  <button onClick={() => handleCancelMeeting(m.id)} style={styles.deleteBtn}>🚫 Cancel Meeting</button>
+                )}
               </div>
             </div>
           );
@@ -300,7 +409,9 @@ export default function ExecutiveMeetings() {
           <div style={styles.emptyState}>
             <span style={{ fontSize: "40px" }}>📅</span>
             <p style={{ margin: "12px 0 4px", fontWeight: "700", color: "#111827" }}>No meetings found</p>
-            <p style={{ margin: 0, color: "#64748B", fontSize: "14px" }}>Schedule a new executive meeting to get started.</p>
+            <p style={{ margin: 0, color: "#64748B", fontSize: "14px" }}>
+              No meetings scheduled for {formatSelectedDate(selectedDate)}.
+            </p>
           </div>
         )}
       </div>
@@ -321,7 +432,7 @@ export default function ExecutiveMeetings() {
                 <input name="meeting_with" value={form.meeting_with} onChange={handleChange} placeholder="e.g. Head Office, Regional Office" style={{ ...styles.input, borderColor: errors.meeting_with ? "#FCA5A5" : "#E2E8F0" }} />
               </FormField>
               <FormField label="Date" error={errors.meeting_date} required>
-                <input type="date" name="meeting_date" value={form.meeting_date} onChange={handleChange} style={{ ...styles.input, borderColor: errors.meeting_date ? "#FCA5A5" : "#E2E8F0" }} />
+                <input type="date" name="meeting_date" min={todayStr()} value={form.meeting_date} onChange={handleChange} style={{ ...styles.input, borderColor: errors.meeting_date ? "#FCA5A5" : "#E2E8F0" }} />
               </FormField>
               <div style={styles.formRow}>
                 <FormField label="Meeting Start Time" error={errors.meeting_time} required>
@@ -428,6 +539,13 @@ const styles = {
   newBtn: { background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", border: "none", padding: "12px 20px", borderRadius: "12px", fontWeight: "700", fontSize: "14px", cursor: "pointer" },
   noticeBanner: { display: "flex", gap: "12px", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "14px 18px", marginBottom: "24px", fontSize: "13px", color: "#1d4ed8", alignItems: "flex-start" },
   noticeIcon: { fontSize: "16px", flexShrink: 0, marginTop: "1px" },
+  dateNav: { display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" },
+  dateNavArrow: { background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: "10px", padding: "10px 16px", cursor: "pointer", fontSize: "14px", fontWeight: "700", color: "#2563EB" },
+  dateNavCenter: { display: "flex", alignItems: "center", gap: "10px", background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: "12px", padding: "10px 18px", position: "relative" },
+  dateNavIcon: { fontSize: "16px" },
+  dateNavLabel: { fontSize: "14px", fontWeight: "700", color: "#111827" },
+  dateNavPicker: { border: "none", background: "transparent", fontSize: "13px", color: "#2563EB", cursor: "pointer", outline: "none" },
+  dateNavToday: { background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: "8px", padding: "5px 10px", fontSize: "12px", fontWeight: "700", cursor: "pointer" },
   statsRow: { display: "flex", gap: "16px", marginBottom: "24px", flexWrap: "wrap" },
   filterRow: { display: "flex", gap: "8px", marginBottom: "20px" },
   filterBtn: { padding: "8px 18px", borderRadius: "20px", border: "1.5px solid", fontSize: "13px", fontWeight: "600", cursor: "pointer" },
