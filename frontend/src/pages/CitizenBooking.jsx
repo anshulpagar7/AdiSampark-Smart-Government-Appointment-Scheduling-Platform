@@ -356,15 +356,6 @@ export default function CitizenBooking() {
   // ── Holiday / Weekend helpers ──────────────────────────────────────────────
 
   /**
-   * Returns the matching holiday record for a given date string (YYYY-MM-DD),
-   * or null if the date is not a holiday.
-   */
-  function getHolidayForDate(dateStr) {
-    if (!dateStr) return null;
-    return holidays.find((h) => h.holiday_date === dateStr) || null;
-  }
-
-  /**
    * Returns true if the given date string (YYYY-MM-DD) falls on a Saturday or Sunday.
    */
   function isWeekend(dateStr) {
@@ -388,8 +379,17 @@ export default function CitizenBooking() {
   function getOfficeStatus(dateStr) {
     if (!dateStr) return { closed: false, reason: null };
 
-    // 1. Holiday check
-    const holiday = getHolidayForDate(dateStr);
+    // 1. Holiday check — strict YYYY-MM-DD string comparison only (BUG 3 FIX)
+    const holiday = holidays.find((h) => h.holiday_date === dateStr);
+
+    // Debug logs
+    console.log("Appointment Type:", appointmentType);
+    console.log("Today:", todayStr);
+    console.log("Selected Date:", selectedDate);
+    console.log("Effective Date:", dateStr);
+    console.log("Holidays:", holidays);
+    console.log("Holiday Found:", holiday);
+
     if (holiday) {
       return { closed: true, reason: holiday.holiday_name };
     }
@@ -410,7 +410,14 @@ export default function CitizenBooking() {
   }
 
   // ── Derive effective booking date ──────────────────────────────────────────
-  const todayStr = new Date().toISOString().split("T")[0];
+  // BUG 1 FIX: use local date parts — toISOString() is UTC and can shift the day
+  const today = new Date();
+  const todayStr =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
 
   const effectiveDateStr =
     appointmentType === "today"
