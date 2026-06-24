@@ -1,20 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "../../lib/supabase";
 
-const INITIAL_MEETINGS = [
-  { id: 1, title: "Head Office Review Meeting", with: "Head Office", date: "20 June 2026", time: "2:00 PM", mode: "Google Meet", link: "https://meet.google.com/abc-defg-hij", notes: "Quarterly review and performance update.", status: "Upcoming" },
-  { id: 2, title: "Regional Officer Discussion", with: "Regional Office", date: "21 June 2026", time: "4:00 PM", mode: "Physical", link: "", notes: "Monthly coordination meeting.", status: "Upcoming" },
-  { id: 3, title: "Budget Planning Session", with: "Finance Department", date: "25 June 2026", time: "11:00 AM", mode: "Google Meet", link: "https://meet.google.com/xyz-1234-abc", notes: "Annual budget planning.", status: "Upcoming" },
-];
-
-const EMPTY_FORM = { title: "", with: "", date: "", time: "", mode: "Google Meet", link: "", notes: "", status: "Upcoming" };
+const EMPTY_FORM = {
+  title: "",
+  meeting_with: "",
+  meeting_date: "",
+  meeting_time: "",
+  meeting_end_time: "",
+  meeting_links: "",
+  notes: "",
+  status: "Upcoming",
+};
 
 export default function ExecutiveMeetings() {
-  const [meetings, setMeetings] = useState(INITIAL_MEETINGS);
+  const [meetings, setMeetings] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [filter, setFilter] = useState("All");
+
+  // Conflict modal state
+  const [conflictModal, setConflictModal] = useState(false);
+  const [conflictAppointments, setConflictAppointments] = useState([]);
+  const [pendingSave, setPendingSave] = useState(null);
+
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
+
+  async function fetchMeetings() {
+    const { data, error } = await supabase
+      .from("executive_meetings")
+      .select("*")
+      .order("meeting_date", { ascending: true });
+
+    if (error) {
+      console.log(error);
+      return;
+    }
+    setMeetings(data);
+  }
 
   const handleChange = e => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -24,21 +50,85 @@ export default function ExecutiveMeetings() {
   const validate = () => {
     const e = {};
     if (!form.title.trim()) e.title = "Meeting title is required";
-    if (!form.with.trim()) e.with = "Attendee is required";
-    if (!form.date) e.date = "Date is required";
-    if (!form.time) e.time = "Time is required";
-    if (form.mode === "Google Meet" && !form.link.trim()) e.link = "Google Meet link is required";
+    if (!form.meeting_with.trim()) e.meeting_with = "Attendee is required";
+    if (!form.meeting_date) e.meeting_date = "Date is required";
+    if (!form.meeting_time) e.meeting_time = "Start time is required";
+    if (!form.meeting_end_time) e.meeting_end_time = "End time is required";
     return e;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
-    if (editId) {
-      setMeetings(prev => prev.map(m => m.id === editId ? { ...form, id: editId } : m));
-    } else {
-      setMeetings(prev => [...prev, { ...form, id: Date.now() }]);
+
+    // Check for appointment conflicts
+    const { data: appts, error: apptError } = await supabase
+      .from("appointments")
+      .select("*")
+      .eq("appointment_date", form.meeting_date);
+
+    if (apptError) {
+      console.log(apptError);
     }
+
+    const conflicts = (appts || []).filter(a => {
+      const t = a.appointment_time;
+      return t >= form.meeting_time && t <= form.meeting_end_time;
+    });
+
+    if (conflicts.length > 0) {
+      setConflictAppointments(conflicts);
+      setPendingSave({ ...form });
+      setConflictModal(true);
+      return;
+    }
+
+    await saveMeeting(form);
+  };
+
+  const saveMeeting = async (data) => {
+    if (editId) {
+      const { error } = await supabase
+        .from("executive_meetings")
+        .update(data)
+        .eq("id", editId);
+      if (error) { console.log(error); alert("Failed to update: " + error.message); return; }
+    } else {
+      const { error } = await supabase
+        .from("executive_meetings")
+        .insert([data]);
+      if (error) { console.log(error); alert("Failed to save: " + error.message); return; }
+    }
+    closeForm();
+    fetchMeetings();
+  };
+
+  const handleProceed = async () => {
+    // Save the meeting
+    await saveMeeting(pendingSave);
+
+    // Update conflicting appointments to Reschedule Required
+    const ids = conflictAppointments.map(a => a.id);
+    const { error } = await supabase
+      .from("appointments")
+      .update({ status: "Reschedule Required" })
+      .in("id", ids);
+
+    if (error) console.log("Failed to update appointments:", error);
+
+    setConflictModal(false);
+    setConflictAppointments([]);
+    setPendingSave(null);
+    fetchMeetings();
+  };
+
+  const handleCancelConflict = () => {
+    setConflictModal(false);
+    setConflictAppointments([]);
+    setPendingSave(null);
+  };
+
+  const closeForm = () => {
     setShowForm(false);
     setEditId(null);
     setForm(EMPTY_FORM);
@@ -46,17 +136,36 @@ export default function ExecutiveMeetings() {
   };
 
   const handleEdit = (m) => {
-    setForm({ ...m });
+    setForm({
+      title: m.title || "",
+      meeting_with: m.meeting_with || "",
+      meeting_date: m.meeting_date || "",
+      meeting_time: m.meeting_time || "",
+      meeting_end_time: m.meeting_end_time || "",
+      meeting_links: m.meeting_links || "",
+      notes: m.notes || "",
+      status: m.status || "Upcoming",
+    });
     setEditId(m.id);
     setShowForm(true);
   };
 
-  const handleDelete = (id) => {
-    setMeetings(prev => prev.filter(m => m.id !== id));
+  const handleDelete = async (id) => {
+    const { error } = await supabase
+      .from("executive_meetings")
+      .delete()
+      .eq("id", id);
+    if (error) { console.log(error); alert("Failed to delete: " + error.message); return; }
+    fetchMeetings();
   };
 
-  const markCompleted = (id) => {
-    setMeetings(prev => prev.map(m => m.id === id ? { ...m, status: "Completed" } : m));
+  const markCompleted = async (id) => {
+    const { error } = await supabase
+      .from("executive_meetings")
+      .update({ status: "Completed" })
+      .eq("id", id);
+    if (error) { console.log(error); alert("Failed to update: " + error.message); return; }
+    fetchMeetings();
   };
 
   const filtered = filter === "All" ? meetings : meetings.filter(m => m.status === filter);
@@ -70,6 +179,8 @@ export default function ExecutiveMeetings() {
     Completed: { bg: "#ECFDF5", color: "#059669" },
     Cancelled: { bg: "#FEF2F2", color: "#DC2626" },
   };
+
+  const getModeFromLink = (link) => link ? "Google Meet" : "Physical";
 
   return (
     <div style={styles.page}>
@@ -97,7 +208,7 @@ export default function ExecutiveMeetings() {
         <StatCard label="Total Meetings" value={meetings.length} color="#2563EB" />
         <StatCard label="Upcoming" value={meetings.filter(m => m.status === "Upcoming").length} color="#F59E0B" />
         <StatCard label="Completed" value={meetings.filter(m => m.status === "Completed").length} color="#10B981" />
-        <StatCard label="Google Meet" value={meetings.filter(m => m.mode === "Google Meet").length} color="#6366F1" />
+        <StatCard label="Google Meet" value={meetings.filter(m => m.meeting_links).length} color="#6366F1" />
       </div>
 
       {/* Filter tabs */}
@@ -112,45 +223,54 @@ export default function ExecutiveMeetings() {
       {/* Meeting Cards */}
       <div style={styles.meetingsGrid}>
         {filtered.map(m => {
-          const ms = modeStyle[m.mode] || { bg: "#F1F5F9", color: "#64748B", icon: "📅" };
+          const mode = getModeFromLink(m.meeting_links);
+          const ms = modeStyle[mode] || { bg: "#F1F5F9", color: "#64748B", icon: "📅" };
           const ss = statusStyle[m.status] || { bg: "#F1F5F9", color: "#64748B" };
+          const dateParts = (m.meeting_date || "").split("-");
+          const dateObj = dateParts.length === 3 ? new Date(m.meeting_date) : null;
+          const day = dateObj ? dateObj.getDate() : "—";
+          const month = dateObj ? dateObj.toLocaleString("default", { month: "short" }) : "";
+          const year = dateObj ? dateObj.getFullYear() : "";
+
           return (
             <div key={m.id} style={{ ...styles.meetingCard, borderLeft: `4px solid ${m.status === "Completed" ? "#10B981" : "#2563EB"}` }}>
               <div style={styles.meetingCardTop}>
                 <div style={styles.meetingCardLeft}>
                   <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
                     <span style={{ ...styles.modeBadge, background: ms.bg, color: ms.color }}>
-                      {ms.icon} {m.mode}
+                      {ms.icon} {mode}
                     </span>
                     <span style={{ ...styles.statusBadge, background: ss.bg, color: ss.color }}>
                       {m.status}
                     </span>
                   </div>
                   <h2 style={styles.meetingTitle}>{m.title}</h2>
-                  <p style={styles.meetingWith}>Meeting with: <strong>{m.with}</strong></p>
+                  <p style={styles.meetingWith}>Meeting with: <strong>{m.meeting_with}</strong></p>
                 </div>
                 <div style={styles.dateBlock}>
                   <div style={styles.dateBox}>
-                    <span style={styles.dateDay}>{m.date.split(" ")[0]}</span>
-                    <span style={styles.dateMonth}>{m.date.split(" ")[1]?.slice(0, 3)}</span>
-                    <span style={styles.dateYear}>{m.date.split(" ")[2]}</span>
+                    <span style={styles.dateDay}>{day}</span>
+                    <span style={styles.dateMonth}>{month}</span>
+                    <span style={styles.dateYear}>{year}</span>
                   </div>
-                  <p style={styles.timeText}>{m.time}</p>
+                  <p style={styles.timeText}>
+                    {m.meeting_time}{m.meeting_end_time ? ` – ${m.meeting_end_time}` : ""}
+                  </p>
                 </div>
               </div>
 
               {m.notes && <p style={styles.notes}>{m.notes}</p>}
 
-              {m.mode === "Google Meet" && m.link && (
+              {m.meeting_links && (
                 <div style={styles.linkBox}>
                   <span style={styles.linkIcon}>🔗</span>
-                  <a href={m.link} target="_blank" rel="noreferrer" style={styles.linkText}>{m.link}</a>
+                  <a href={m.meeting_links} target="_blank" rel="noreferrer" style={styles.linkText}>{m.meeting_links}</a>
                 </div>
               )}
 
               <div style={styles.cardActions}>
-                {m.mode === "Google Meet" && m.link && (
-                  <a href={m.link} target="_blank" rel="noreferrer" style={styles.joinBtn}>🎥 Join Meet</a>
+                {m.meeting_links && (
+                  <a href={m.meeting_links} target="_blank" rel="noreferrer" style={styles.joinBtn}>🎥 Join Meet</a>
                 )}
                 <button onClick={() => handleEdit(m)} style={styles.editBtn}>✏️ Edit</button>
                 {m.status !== "Completed" && (
@@ -171,44 +291,35 @@ export default function ExecutiveMeetings() {
         )}
       </div>
 
-      {/* Modal Form */}
+      {/* Schedule / Edit Modal */}
       {showForm && (
-        <div style={styles.modalOverlay} onClick={e => { if (e.target === e.currentTarget) { setShowForm(false); } }}>
+        <div style={styles.modalOverlay} onClick={e => { if (e.target === e.currentTarget) closeForm(); }}>
           <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>{editId ? "Edit Meeting" : "Schedule New Meeting"}</h2>
-              <button onClick={() => setShowForm(false)} style={styles.modalClose}>✕</button>
+              <button onClick={closeForm} style={styles.modalClose}>✕</button>
             </div>
             <div style={styles.modalBody}>
               <FormField label="Meeting Title" error={errors.title} required>
                 <input name="title" value={form.title} onChange={handleChange} placeholder="e.g. Head Office Review" style={{ ...styles.input, borderColor: errors.title ? "#FCA5A5" : "#E2E8F0" }} />
               </FormField>
-              <FormField label="Meeting With" error={errors.with} required>
-                <input name="with" value={form.with} onChange={handleChange} placeholder="e.g. Head Office, Regional Office" style={{ ...styles.input, borderColor: errors.with ? "#FCA5A5" : "#E2E8F0" }} />
+              <FormField label="Meeting With" error={errors.meeting_with} required>
+                <input name="meeting_with" value={form.meeting_with} onChange={handleChange} placeholder="e.g. Head Office, Regional Office" style={{ ...styles.input, borderColor: errors.meeting_with ? "#FCA5A5" : "#E2E8F0" }} />
+              </FormField>
+              <FormField label="Date" error={errors.meeting_date} required>
+                <input type="date" name="meeting_date" value={form.meeting_date} onChange={handleChange} style={{ ...styles.input, borderColor: errors.meeting_date ? "#FCA5A5" : "#E2E8F0" }} />
               </FormField>
               <div style={styles.formRow}>
-                <FormField label="Date" error={errors.date} required>
-                  <input type="date" name="date" value={form.date} onChange={handleChange} style={{ ...styles.input, borderColor: errors.date ? "#FCA5A5" : "#E2E8F0" }} />
+                <FormField label="Meeting Start Time" error={errors.meeting_time} required>
+                  <input type="time" name="meeting_time" value={form.meeting_time} onChange={handleChange} style={{ ...styles.input, borderColor: errors.meeting_time ? "#FCA5A5" : "#E2E8F0" }} />
                 </FormField>
-                <FormField label="Time" error={errors.time} required>
-                  <input type="time" name="time" value={form.time} onChange={handleChange} style={{ ...styles.input, borderColor: errors.time ? "#FCA5A5" : "#E2E8F0" }} />
+                <FormField label="Meeting End Time" error={errors.meeting_end_time} required>
+                  <input type="time" name="meeting_end_time" value={form.meeting_end_time} onChange={handleChange} style={{ ...styles.input, borderColor: errors.meeting_end_time ? "#FCA5A5" : "#E2E8F0" }} />
                 </FormField>
               </div>
-              <FormField label="Meeting Mode">
-                <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
-                  {["Google Meet", "Physical"].map(mode => (
-                    <button key={mode} onClick={() => setForm({ ...form, mode, link: mode === "Physical" ? "" : form.link })}
-                      style={{ ...styles.modeToggle, background: form.mode === mode ? "#2563EB" : "#F8FAFC", color: form.mode === mode ? "#fff" : "#374151", border: `1.5px solid ${form.mode === mode ? "#2563EB" : "#E2E8F0"}` }}>
-                      {mode === "Google Meet" ? "🎥" : "🏢"} {mode}
-                    </button>
-                  ))}
-                </div>
+              <FormField label="Meeting Link">
+                <input name="meeting_links" value={form.meeting_links} onChange={handleChange} placeholder="https://meet.google.com/..." style={styles.input} />
               </FormField>
-              {form.mode === "Google Meet" && (
-                <FormField label="Google Meet Link" error={errors.link} required>
-                  <input name="link" value={form.link} onChange={handleChange} placeholder="https://meet.google.com/..." style={{ ...styles.input, borderColor: errors.link ? "#FCA5A5" : "#E2E8F0" }} />
-                </FormField>
-              )}
               <FormField label="Notes">
                 <textarea name="notes" value={form.notes} onChange={handleChange} placeholder="Meeting agenda or notes..." rows={3} style={{ ...styles.input, resize: "vertical" }} />
               </FormField>
@@ -221,8 +332,50 @@ export default function ExecutiveMeetings() {
               </FormField>
             </div>
             <div style={styles.modalFooter}>
-              <button onClick={() => setShowForm(false)} style={styles.cancelBtn}>Cancel</button>
+              <button onClick={closeForm} style={styles.cancelBtn}>Cancel</button>
               <button onClick={handleSave} style={styles.saveBtn}>{editId ? "Save Changes" : "Schedule Meeting"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conflict Detection Modal */}
+      {conflictModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modal, maxWidth: "520px" }}>
+            <div style={styles.modalHeader}>
+              <h2 style={{ ...styles.modalTitle, color: "#D97706" }}>⚠️ Appointment Conflict Detected</h2>
+              <button onClick={handleCancelConflict} style={styles.modalClose}>✕</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ margin: "0 0 16px", fontSize: "14px", color: "#374151" }}>
+                This executive meeting overlaps with the following citizen appointments:
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                {conflictAppointments.map(a => (
+                  <div key={a.id} style={styles.conflictRow}>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <div style={styles.conflictAvatar}>{(a.citizen_name || "?")[0]}</div>
+                      <div>
+                        <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "14px", color: "#111827" }}>{a.citizen_name}</p>
+                        <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>{a.purpose}</p>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: "700", color: "#2563EB" }}>{a.appointment_time}</p>
+                      <span style={styles.conflictStatusBadge}>{a.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={styles.conflictWarning}>
+                <span>⚠️</span>
+                <span>If you proceed, the above citizens will be marked as <strong>"Reschedule Required"</strong> and will need to rebook their appointments.</span>
+              </div>
+            </div>
+            <div style={styles.modalFooter}>
+              <button onClick={handleCancelConflict} style={styles.cancelBtn}>Cancel</button>
+              <button onClick={handleProceed} style={{ ...styles.saveBtn, background: "linear-gradient(135deg,#D97706,#B45309)" }}>Proceed</button>
             </div>
           </div>
         </div>
@@ -297,7 +450,10 @@ const styles = {
   modalFooter: { padding: "16px 28px 24px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "flex-end", gap: "12px" },
   input: { width: "100%", padding: "11px 14px", border: "1.5px solid #E2E8F0", borderRadius: "10px", fontSize: "14px", background: "#F8FAFC", color: "#111827", outline: "none", boxSizing: "border-box" },
   formRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" },
-  modeToggle: { flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
   cancelBtn: { background: "#F1F5F9", color: "#374151", border: "none", padding: "12px 20px", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "14px" },
   saveBtn: { background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", border: "none", padding: "12px 24px", borderRadius: "10px", cursor: "pointer", fontWeight: "700", fontSize: "14px" },
+  conflictRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF7ED", border: "1px solid #FDE68A", borderRadius: "10px", padding: "12px 16px" },
+  conflictAvatar: { width: "36px", height: "36px", borderRadius: "8px", background: "linear-gradient(135deg,#D97706,#B45309)", color: "#fff", fontWeight: "700", fontSize: "15px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  conflictStatusBadge: { background: "#FEF3C7", color: "#D97706", fontSize: "11px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px" },
+  conflictWarning: { display: "flex", gap: "10px", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: "10px", padding: "12px 16px", fontSize: "13px", color: "#92400E", alignItems: "flex-start" },
 };
