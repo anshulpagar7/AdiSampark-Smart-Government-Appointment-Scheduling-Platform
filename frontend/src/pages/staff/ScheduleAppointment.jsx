@@ -1,6 +1,20 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 
+// Converts "09:30 AM" / "02:40 PM" to total minutes since midnight
+function timeToMinutes(time) {
+  const d = new Date(`1970-01-01 ${time}`);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function getTodayStr() {
+  const n = new Date();
+  const y = n.getFullYear();
+  const m = String(n.getMonth() + 1).padStart(2, "0");
+  const d = String(n.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const SLOTS = [
   "09:00 AM", "09:10 AM", "09:20 AM", "09:30 AM",
   "09:40 AM", "09:50 AM", "10:00 AM", "10:10 AM",
@@ -17,10 +31,26 @@ export default function ScheduleAppointment() {
   const [errors, setErrors] = useState({});
   const [busySlots, setBusySlots] = useState([]);
   const [saving, setSaving] = useState(false);
+  // Real-time clock: current minutes since midnight, ticks every minute
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  });
+
+  // Tick every minute so past slots update in real time
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const n = new Date();
+      setNowMinutes(n.getHours() * 60 + n.getMinutes());
+    }, 60000);
+    return () => clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     if (form.date) fetchBusySlots(form.date);
     else setBusySlots([]);
+    // Clear selected slot if date changes
+    setForm(f => ({ ...f, slot: "" }));
   }, [form.date]);
 
   const fetchBusySlots = async (date) => {
@@ -80,6 +110,9 @@ export default function ScheduleAppointment() {
     setErrors({});
     setBusySlots([]);
   };
+
+  // Is the selected date today?
+  const isToday = form.date === getTodayStr();
 
   if (created) {
     return (
@@ -177,6 +210,7 @@ export default function ScheduleAppointment() {
                 type="date"
                 name="date"
                 value={form.date}
+                min={getTodayStr()}
                 onChange={handleChange}
                 style={{ ...styles.input, borderColor: errors.date ? "#FCA5A5" : "#E2E8F0" }}
               />
@@ -204,35 +238,57 @@ export default function ScheduleAppointment() {
                 Select a date above to see slot availability.
               </p>
             )}
-            <div style={styles.slotLegend}>
-              <span style={styles.legendDot("white","#E2E8F0")} /> Available &nbsp;&nbsp;
-              <span style={styles.legendDot("#EFF6FF","#2563EB")} /> Selected &nbsp;&nbsp;
-              <span style={styles.legendDot("#FEF2F2","#EF4444")} /> Occupied
-            </div>
-            <div style={styles.slotGrid}>
-              {SLOTS.map(slot => {
-                const isBusy = busySlots.includes(slot);
-                const isSelected = form.slot === slot;
-                return (
-                  <button
-                    key={slot}
-                    disabled={isBusy}
-                    onClick={() => { setForm({ ...form, slot }); setErrors({ ...errors, slot: "" }); }}
-                    style={{
-                      ...styles.slotBtn,
-                      background: isBusy ? "#FEF2F2" : isSelected ? "#2563EB" : "#fff",
-                      color: isBusy ? "#DC2626" : isSelected ? "#fff" : "#374151",
-                      border: `1.5px solid ${isBusy ? "#FECACA" : isSelected ? "#2563EB" : "#E2E8F0"}`,
-                      cursor: isBusy ? "not-allowed" : "pointer",
-                      opacity: isBusy ? 0.7 : 1,
-                    }}
-                  >
-                    {slot}
-                    {isBusy && <span style={styles.busyDot} />}
-                  </button>
-                );
-              })}
-            </div>
+            {form.date && (
+              <>
+                <div style={styles.slotLegend}>
+                  <span style={styles.legendDot("#fff", "#E2E8F0")} /> Available &nbsp;&nbsp;
+                  <span style={styles.legendDot("#EFF6FF", "#2563EB")} /> Selected &nbsp;&nbsp;
+                  <span style={styles.legendDot("#FEF2F2", "#EF4444")} /> Booked &nbsp;&nbsp;
+                  <span style={styles.legendDot("#F8FAFC", "#CBD5E1")} /> Past
+                </div>
+                <div style={styles.slotGrid}>
+                  {SLOTS.map(slot => {
+                    const isBooked = busySlots.includes(slot);
+                    // Past = today's date AND current time has passed this slot
+                    const isPast = isToday && timeToMinutes(slot) <= nowMinutes;
+                    const isSelected = form.slot === slot;
+                    const isDisabled = isBooked || isPast;
+
+                    let bg, color, border, cursor;
+
+                    if (isBooked) {
+                      bg = "#FEF2F2"; color = "#DC2626"; border = "#FECACA"; cursor = "not-allowed";
+                    } else if (isPast) {
+                      bg = "#F8FAFC"; color = "#CBD5E1"; border = "#E2E8F0"; cursor = "not-allowed";
+                    } else if (isSelected) {
+                      bg = "#2563EB"; color = "#fff"; border = "#2563EB"; cursor = "pointer";
+                    } else {
+                      bg = "#fff"; color = "#374151"; border = "#E2E8F0"; cursor = "pointer";
+                    }
+
+                    return (
+                      <button
+                        key={slot}
+                        disabled={isDisabled}
+                        onClick={() => { setForm({ ...form, slot }); setErrors({ ...errors, slot: "" }); }}
+                        title={isBooked ? "Already booked" : isPast ? "Time has passed" : slot}
+                        style={{
+                          ...styles.slotBtn,
+                          background: bg,
+                          color,
+                          border: `1.5px solid ${border}`,
+                          cursor,
+                          opacity: isPast && !isBooked ? 0.5 : 1,
+                        }}
+                      >
+                        {isPast && !isBooked ? "—" : slot}
+                        {isBooked && <span style={styles.busyDot} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           <button onClick={handleCreate} disabled={saving} style={{ ...styles.submitBtn, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}>
@@ -325,7 +381,7 @@ const styles = {
   fieldsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "36px" },
   input: { width: "100%", padding: "12px 14px", border: "1.5px solid #E2E8F0", borderRadius: "10px", fontSize: "14px", background: "#F8FAFC", color: "#111827", outline: "none", boxSizing: "border-box", marginTop: "2px" },
   slotSection: { borderTop: "1px solid #F1F5F9", paddingTop: "28px" },
-  slotLegend: { display: "flex", alignItems: "center", marginBottom: "16px", fontSize: "12px", color: "#64748B" },
+  slotLegend: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", marginBottom: "16px", fontSize: "12px", color: "#64748B" },
   legendDot: (bg, border) => ({ display: "inline-block", width: "14px", height: "14px", borderRadius: "4px", background: bg, border: `1.5px solid ${border}`, marginRight: "5px", verticalAlign: "middle" }),
   slotGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: "10px", marginBottom: "32px" },
   slotBtn: { padding: "12px 8px", borderRadius: "10px", fontSize: "13px", fontWeight: "600", position: "relative", transition: "all 0.15s" },
