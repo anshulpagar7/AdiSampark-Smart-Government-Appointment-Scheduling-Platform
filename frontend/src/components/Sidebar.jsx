@@ -1,6 +1,6 @@
 import { useState } from "react";
-import tdcLogo    from "../../assets/tdc-logo.jpeg";
-import tribalLogo from "../../assets/tribal-logo.jpg";
+import tdcLogo    from "../assets/tdc-logo.jpeg";
+import tribalLogo from "../assets/tribal-logo.jpg";
 
 const NAV_ITEMS = [
   { key: "Dashboard",          label: "Dashboard",               icon: "📊" },
