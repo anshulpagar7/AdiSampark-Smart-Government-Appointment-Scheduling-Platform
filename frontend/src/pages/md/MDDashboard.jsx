@@ -220,8 +220,8 @@ const popupStyles = {
 
 // ─── Timeline Section ─────────────────────────────────────────────────────────
 
-function TodayTimeline({ appointments, meetings }) {
-  const now = nowMinutes();
+function TodayTimeline({ appointments, meetings, isToday = true }) {
+  const now = isToday ? nowMinutes() : -1; // -1 means nothing is "past" on future/past dates
   const events = [];
 
   appointments.forEach(a => {
@@ -597,6 +597,190 @@ function TourDiarySection({ tourDiary }) {
   );
 }
 
+// ─── Live Status Badge ────────────────────────────────────────────────────────
+
+function LiveStatusBadge({ currentCitizen, meetings }) {
+  const [tick, setTick] = useState(0);
+
+  // Tick every second for the live countdown
+  useEffect(() => {
+    const t = setInterval(() => setTick(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Check for an ongoing executive meeting right now
+  const now = nowMinutes();
+  const ongoingMeeting = meetings.find(m => {
+    if (!m.meeting_time) return false;
+    const start = parseTimeToMinutes(m.meeting_time);
+    const end   = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : start + 30;
+    return now >= start && now <= end;
+  }) || null;
+
+  // ── State: Meeting in progress (citizen in cabin) ──────────────────────────
+  if (currentCitizen) {
+    let timeRemaining = "—";
+    if (currentCitizen.appointment_end_time) {
+      const endMin  = parseTimeToMinutes(currentCitizen.appointment_end_time);
+      const diffSec = (endMin - now) * 60 - (new Date().getSeconds());
+      if (diffSec > 0) {
+        const m = Math.floor(diffSec / 60);
+        const s = diffSec % 60;
+        timeRemaining = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      } else {
+        timeRemaining = "00:00";
+      }
+    }
+
+    return (
+      <div style={liveStyles.badge}>
+        <div style={liveStyles.header}>
+          <span style={{ ...liveStyles.dot, background: "#4ADE80", animation: "pulse-ring 1.8s ease infinite" }} />
+          <span style={liveStyles.headerLabel}>Meeting in Progress</span>
+        </div>
+        <div style={liveStyles.divider} />
+        <div style={liveStyles.row}>
+          <span style={liveStyles.rowLabel}>Current Citizen</span>
+          <span style={liveStyles.rowValue}>{currentCitizen.citizen_name}</span>
+        </div>
+        {currentCitizen.appointment_end_time && (
+          <div style={liveStyles.row}>
+            <span style={liveStyles.rowLabel}>Time Remaining</span>
+            <span style={{
+              ...liveStyles.rowValue,
+              fontFamily: "monospace",
+              fontSize: 16,
+              color: timeRemaining === "00:00" ? "#EF4444" : "#4ADE80",
+              letterSpacing: "0.08em",
+            }}>
+              {timeRemaining}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── State: Executive meeting ongoing ──────────────────────────────────────
+  if (ongoingMeeting) {
+    let timeRemaining = "—";
+    if (ongoingMeeting.meeting_end_time) {
+      const endMin  = parseTimeToMinutes(ongoingMeeting.meeting_end_time);
+      const diffSec = (endMin - now) * 60 - (new Date().getSeconds());
+      if (diffSec > 0) {
+        const m = Math.floor(diffSec / 60);
+        const s = diffSec % 60;
+        timeRemaining = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      } else {
+        timeRemaining = "00:00";
+      }
+    }
+
+    return (
+      <div style={{ ...liveStyles.badge, border: "1px solid rgba(167,139,250,0.25)", boxShadow: "0 0 0 1px rgba(167,139,250,0.12), 0 0 20px rgba(167,139,250,0.08), inset 0 1px 0 rgba(255,255,255,0.08)" }}>
+        <div style={liveStyles.header}>
+          <span style={{ ...liveStyles.dot, background: "#A78BFA", animation: "pulse-ring 1.8s ease infinite" }} />
+          <span style={liveStyles.headerLabel}>Executive Meeting</span>
+        </div>
+        <div style={liveStyles.divider} />
+        <div style={liveStyles.row}>
+          <span style={liveStyles.rowLabel}>Meeting</span>
+          <span style={{ ...liveStyles.rowValue, fontSize: 12, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {ongoingMeeting.title}
+          </span>
+        </div>
+        {ongoingMeeting.meeting_end_time && (
+          <div style={liveStyles.row}>
+            <span style={liveStyles.rowLabel}>Time Remaining</span>
+            <span style={{
+              ...liveStyles.rowValue,
+              fontFamily: "monospace",
+              fontSize: 16,
+              color: timeRemaining === "00:00" ? "#EF4444" : "#A78BFA",
+              letterSpacing: "0.08em",
+            }}>
+              {timeRemaining}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── State: Cabin available ─────────────────────────────────────────────────
+  return (
+    <div style={{ ...liveStyles.badge, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}>
+      <div style={liveStyles.header}>
+        <span style={{ ...liveStyles.dot, background: "#94A3B8" }} />
+        <span style={{ ...liveStyles.headerLabel, color: "rgba(255,255,255,0.5)" }}>Cabin Available</span>
+      </div>
+      <div style={liveStyles.divider} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4px 0" }}>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>No active session</span>
+      </div>
+    </div>
+  );
+}
+
+const liveStyles = {
+  badge: {
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(74,222,128,0.25)",
+    borderRadius: 14,
+    padding: "10px 14px",
+    minWidth: 190,
+    backdropFilter: "blur(8px)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    boxShadow: "0 0 0 1px rgba(74,222,128,0.15), 0 0 20px rgba(74,222,128,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+  },
+  headerLabel: {
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#4ADE80",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    display: "inline-block",
+    flexShrink: 0,
+  },
+  divider: {
+    height: 1,
+    background: "rgba(255,255,255,0.1)",
+    margin: "2px 0",
+  },
+  row: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  rowLabel: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.45)",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    flexShrink: 0,
+  },
+  rowValue: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#fff",
+    textAlign: "right",
+  },
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MDDashboard() {
@@ -605,6 +789,12 @@ export default function MDDashboard() {
   const [tourDiary, setTourDiary]       = useState([]);
   const [popup, setPopup]               = useState(null);
   const [greeting, setGreeting]         = useState(getDynamicGreeting());
+
+  // ── Timeline independent date state ──
+  const [timelineDate, setTimelineDate]         = useState(getTodayLocalDate());
+  const [timelineAppts, setTimelineAppts]       = useState([]);
+  const [timelineMeetings, setTimelineMeetings] = useState([]);
+  const [timelineLoading, setTimelineLoading]   = useState(false);
 
   const shownPopupsRef = useRef(new Set());
   const today = getTodayLocalDate();
@@ -619,6 +809,28 @@ export default function MDDashboard() {
     if (!meetRes.error) setMeetings(sortByTime(meetRes.data ?? [], "meeting_time"));
     if (!tourRes.error) setTourDiary(tourRes.data ?? []);
   }, [today]);
+
+  const fetchTimeline = useCallback(async (dateStr) => {
+    setTimelineLoading(true);
+    const [apptRes, meetRes] = await Promise.all([
+      supabase.from("appointments").select("*").eq("appointment_date", dateStr).order("appointment_time", { ascending: true }),
+      supabase.from("executive_meetings").select("*").eq("meeting_date", dateStr),
+    ]);
+    if (!apptRes.error) setTimelineAppts(apptRes.data ?? []);
+    if (!meetRes.error) setTimelineMeetings(sortByTime(meetRes.data ?? [], "meeting_time"));
+    setTimelineLoading(false);
+  }, []);
+
+  // Sync timeline when timelineDate changes
+  useEffect(() => { fetchTimeline(timelineDate); }, [timelineDate, fetchTimeline]);
+
+  // Also refresh timeline if it's showing today and fetchAll runs
+  useEffect(() => {
+    if (timelineDate === today) {
+      setTimelineAppts(appointments);
+      setTimelineMeetings(meetings);
+    }
+  }, [appointments, meetings, timelineDate, today]);
 
   useEffect(() => {
     fetchAll();
@@ -735,6 +947,9 @@ export default function MDDashboard() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Live Status Badge */}
+          <LiveStatusBadge currentCitizen={currentCitizen} meetings={meetings} />
+
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.12)", borderRadius: 99, padding: "8px 16px" }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ADE80", animation: "pulse-ring 1.8s ease infinite", display: "inline-block" }} />
             <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>Live Dashboard</span>
@@ -901,11 +1116,66 @@ export default function MDDashboard() {
 
         {/* TODAY'S TIMELINE */}
         <div style={{ background: "#fff", borderRadius: 22, padding: 28, boxShadow: "0 8px 32px rgba(0,0,0,0.06)", marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+
+          {/* Header row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
             <div>
               <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Chronological</p>
-              <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: "#111827" }}>Today's Timeline</h2>
+              <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: "#111827" }}>
+                {timelineDate === today ? "Today's Timeline" : "Schedule"}
+              </h2>
             </div>
+
+            {/* Date navigator */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Prev day */}
+              <button
+                onClick={() => {
+                  const d = new Date(timelineDate + "T00:00:00");
+                  d.setDate(d.getDate() - 1);
+                  setTimelineDate(d.toISOString().split("T")[0]);
+                }}
+                style={{ background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "8px 13px", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", lineHeight: 1 }}
+              >◀</button>
+
+              {/* Date picker + label */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "8px 14px", cursor: "pointer", position: "relative" }}>
+                <span style={{ fontSize: 15 }}>📅</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", whiteSpace: "nowrap" }}>
+                  {timelineDate === today
+                    ? "Today"
+                    : new Date(timelineDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                </span>
+                <input
+                  type="date"
+                  value={timelineDate}
+                  onChange={e => setTimelineDate(e.target.value)}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
+                />
+              </div>
+
+              {/* Next day */}
+              <button
+                onClick={() => {
+                  const d = new Date(timelineDate + "T00:00:00");
+                  d.setDate(d.getDate() + 1);
+                  setTimelineDate(d.toISOString().split("T")[0]);
+                }}
+                style={{ background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "8px 13px", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", lineHeight: 1 }}
+              >▶</button>
+
+              {/* Back to today pill — only show when not on today */}
+              {timelineDate !== today && (
+                <button
+                  onClick={() => setTimelineDate(today)}
+                  style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 99, padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                >
+                  Today
+                </button>
+              )}
+            </div>
+
+            {/* Legend */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {[{ color: "#2563EB", label: "Citizen" }, { color: "#7C3AED", label: "Meeting" }, { color: "#F59E0B", label: "Break" }, { color: "#10B981", label: "Lunch" }].map(l => (
                 <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -915,7 +1185,21 @@ export default function MDDashboard() {
               ))}
             </div>
           </div>
-          <TodayTimeline appointments={appointments} meetings={meetings} />
+
+          {/* Full date display */}
+          <div style={{ marginBottom: 18, padding: "10px 16px", background: timelineDate === today ? "#EFF6FF" : "#F5F3FF", borderRadius: 12, border: `1px solid ${timelineDate === today ? "#BFDBFE" : "#DDD6FE"}`, display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14 }}>{timelineDate === today ? "🟢" : "📆"}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: timelineDate === today ? "#1E3A8A" : "#4C1D95" }}>
+              {new Date(timelineDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </span>
+            {timelineLoading && <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>Loading…</span>}
+          </div>
+
+          <TodayTimeline
+            appointments={timelineAppts}
+            meetings={timelineMeetings}
+            isToday={timelineDate === today}
+          />
         </div>
 
         {/* FOCUS + QUEUE */}
