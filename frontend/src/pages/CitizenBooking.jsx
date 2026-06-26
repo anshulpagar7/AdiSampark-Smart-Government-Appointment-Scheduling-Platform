@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import Header from "../components/Header";
 import { translations } from "../translations";
 import { supabase } from "../lib/supabase";
+import { useRealtime } from "../hooks/useRealtime";
+import { useRealtime } from "../hooks/useRealtime";
 import tdcLogo from "../assets/tdc-logo.jpeg";
 import tribalLogo from "../assets/tribal-logo.jpg";
 
@@ -347,6 +349,26 @@ export default function CitizenBooking() {
     }
     fetchHolidays();
   }, []);
+
+  // ── Realtime: slot availability and holidays refresh instantly ────────────
+  useRealtime({
+    appointments: () => {
+      if (!effectiveDateStr) return;
+      supabase
+        .from("appointments")
+        .select("appointment_time, appointment_duration")
+        .eq("appointment_date", effectiveDateStr)
+        .then(({ data, error }) => {
+          if (!error && data) setBookedAppointments(data);
+        });
+    },
+    holidays: () => {
+      supabase
+        .from("holidays")
+        .select("id, holiday_name, holiday_date, holiday_type, category")
+        .then(({ data, error }) => { if (!error && data) setHolidays(data); });
+    },
+  });
 
   // ── Fetch announcements & events on confirmation ──────────────────────────
   useEffect(() => {
