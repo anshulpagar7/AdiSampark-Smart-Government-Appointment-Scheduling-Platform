@@ -52,32 +52,57 @@ export default function Events() {
   // ── Fetch events ──────────────────────────────────────────────────────────
   const fetchEvents = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .order("date", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .order("date", { ascending: true });
 
-    if (error) {
-      console.error("fetchEvents:", error);
-      showToast("Failed to load events.", "error");
-    } else {
-      setEvents(data || []);
+      if (error) {
+        console.error("fetchEvents error:", error);
+        alert(error.message);
+        showToast(error.message, "error");
+      } else {
+        console.log("Events:", data);
+        setEvents(data || []);
+      }
+    } catch (err) {
+      console.error("fetchEvents exception:", err);
+      alert(err.message);
+      showToast(err.message, "error");
     }
     setLoading(false);
   }, []);
 
   // ── Fetch latest announcement ─────────────────────────────────────────────
   const fetchAnnouncement = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("announcements")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("announcements")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    if (!error && data) {
-      setAnnouncement(data.message);
-      setAnnouncementId(data.id);
+      if (error) {
+        console.error("fetchAnnouncement error:", error);
+        alert(error.message);
+        showToast(error.message, "error");
+        return;
+      }
+
+      console.log("Announcement:", data);
+
+      if (data && data.length > 0) {
+        setAnnouncement(data[0].message);
+        setAnnouncementId(data[0].id);
+      } else {
+        setAnnouncement("No announcements yet.");
+        setAnnouncementId(null);
+      }
+    } catch (err) {
+      console.error("fetchAnnouncement exception:", err);
+      alert(err.message);
+      showToast(err.message, "error");
     }
   }, []);
 
@@ -106,6 +131,8 @@ export default function Events() {
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
     setSaving(true);
+
+    // BUG 3 — Payload matches Supabase columns exactly; no undefined values sent.
     const payload = {
       title:           form.title.trim(),
       date:            form.date,
@@ -113,21 +140,45 @@ export default function Events() {
       description:     form.description.trim(),
       category:        form.category,
       status:          form.status,
-      show_on_citizen: form.show_on_citizen,
+      show_on_citizen: Boolean(form.show_on_citizen),
     };
 
-    if (editId) {
-      const { error } = await supabase
-        .from("events")
-        .update(payload)
-        .eq("id", editId);
+    // BUG 6 — Log payload before every insert/update.
+    console.log("Event Payload:", payload);
 
-      if (error) { showToast("Failed to update event.", "error"); }
-      else        { showToast("Event updated successfully."); }
-    } else {
-      const { error } = await supabase.from("events").insert([payload]);
-      if (error) { showToast("Failed to create event.", "error"); }
-      else        { showToast("Event created successfully."); }
+    try {
+      if (editId) {
+        const { error } = await supabase
+          .from("events")
+          .update(payload)
+          .eq("id", editId);
+
+        if (error) {
+          console.error("update event error:", error);
+          alert(error.message);
+          showToast(error.message, "error");
+          setSaving(false);
+          return;
+        }
+        showToast("Event updated successfully.");
+      } else {
+        const { error } = await supabase.from("events").insert([payload]);
+
+        if (error) {
+          console.error("insert event error:", error);
+          alert(error.message);
+          showToast(error.message, "error");
+          setSaving(false);
+          return;
+        }
+        showToast("Event created successfully.");
+      }
+    } catch (err) {
+      console.error("handleSave exception:", err);
+      alert(err.message);
+      showToast(err.message, "error");
+      setSaving(false);
+      return;
     }
 
     setSaving(false);
@@ -135,7 +186,10 @@ export default function Events() {
     setEditId(null);
     setForm(EMPTY_FORM);
     setErrors({});
+
+    // BUG 5 — Refresh both events and announcement after every change.
     fetchEvents();
+    fetchAnnouncement();
   };
 
   const handleEdit = (ev) => {
@@ -153,44 +207,95 @@ export default function Events() {
     setErrors({});
   };
 
-  // Soft-delete: mark as Cancelled instead of removing the row.
+  // BUG 7 — Soft-delete: set status = "Cancelled". Row stays in DB for history.
   const handleDelete = async (id) => {
-    const { error } = await supabase
-      .from("events")
-      .update({ status: "Cancelled" })
-      .eq("id", id);
+    const softDeletePayload = { status: "Cancelled" };
+    console.log("Event Payload (soft-delete):", { id, ...softDeletePayload });
 
-    if (error) { showToast("Failed to cancel event.", "error"); }
-    else        { showToast("Event marked as Cancelled."); fetchEvents(); }
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update(softDeletePayload)
+        .eq("id", id);
+
+      if (error) {
+        console.error("handleDelete error:", error);
+        alert(error.message);
+        showToast(error.message, "error");
+        return;
+      }
+
+      showToast("Event marked as Cancelled.");
+
+      // BUG 5 — Refresh both after cancel.
+      fetchEvents();
+      fetchAnnouncement();
+    } catch (err) {
+      console.error("handleDelete exception:", err);
+      alert(err.message);
+      showToast(err.message, "error");
+    }
   };
 
   // ── Edit announcement ─────────────────────────────────────────────────────
   const handleEditAnnouncement = async () => {
-    const text = prompt("Update announcement:", announcement);
-    if (!text || text.trim() === announcement) return;
+    const text = prompt("Update announcement:", announcement === "No announcements yet." ? "" : announcement);
+    if (text === null) return;             // user pressed Cancel
+    if (!text.trim()) return;             // empty input — do nothing
+    if (text.trim() === announcement) return; // no change
 
     const trimmed = text.trim();
 
-    if (announcementId) {
-      const { error } = await supabase
-        .from("announcements")
-        .update({ message: trimmed })
-        .eq("id", announcementId);
+    try {
+      if (announcementId) {
+        // Update existing row — only send message, not id or created_at.
+        const updatePayload = { message: trimmed };
+        console.log("Announcement Payload (update):", updatePayload);
 
-      if (error) { showToast("Failed to update announcement.", "error"); return; }
-    } else {
-      const { data, error } = await supabase
-        .from("announcements")
-        .insert([{ message: trimmed }])
-        .select()
-        .single();
+        const { error } = await supabase
+          .from("announcements")
+          .update(updatePayload)
+          .eq("id", announcementId);
 
-      if (error) { showToast("Failed to update announcement.", "error"); return; }
-      setAnnouncementId(data.id);
+        if (error) {
+          console.error("update announcement error:", error);
+          alert(error.message);
+          showToast(error.message, "error");
+          return;
+        }
+      } else {
+        // BUG 4 — Insert only `message`. Do NOT send id or created_at.
+        const insertPayload = { message: trimmed };
+        console.log("Announcement Payload (insert):", insertPayload);
+
+        const { data, error } = await supabase
+          .from("announcements")
+          .insert([insertPayload])
+          .select();
+
+        if (error) {
+          console.error("insert announcement error:", error);
+          alert(error.message);
+          showToast(error.message, "error");
+          return;
+        }
+
+        // Capture the new row's id so future edits use update, not insert.
+        if (data && data.length > 0) {
+          setAnnouncementId(data[0].id);
+        }
+      }
+
+      showToast("Announcement updated.");
+
+      // BUG 5 — Refresh both after announcement change.
+      fetchEvents();
+      fetchAnnouncement();
+    } catch (err) {
+      console.error("handleEditAnnouncement exception:", err);
+      alert(err.message);
+      showToast(err.message, "error");
     }
-
-    setAnnouncement(trimmed);
-    showToast("Announcement updated.");
   };
 
   // ── Derived stats ─────────────────────────────────────────────────────────
