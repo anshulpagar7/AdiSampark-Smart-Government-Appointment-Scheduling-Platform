@@ -1120,11 +1120,13 @@ export default function CitizenBooking() {
             </label>
             <input
               type="tel"
+              inputMode="numeric"
+              maxLength={10}
               style={{
                 width: "100%",
                 padding: "13px 16px",
                 borderRadius: 12,
-                border: "1.5px solid #D1D5DB",
+                border: `1.5px solid ${mobile.length > 0 && mobile.length < 10 ? "#F87171" : "#D1D5DB"}`,
                 fontSize: 15,
                 color: "#111827",
                 outline: "none",
@@ -1133,10 +1135,15 @@ export default function CitizenBooking() {
               }}
               placeholder={t.mobilePlaceholder}
               value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
+              onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
               onFocus={(e) => (e.target.style.borderColor = "#2563EB")}
-              onBlur={(e) => (e.target.style.borderColor = "#D1D5DB")}
+              onBlur={(e) => (e.target.style.borderColor = mobile.length > 0 && mobile.length < 10 ? "#F87171" : "#D1D5DB")}
             />
+            {mobile.length > 0 && mobile.length < 10 && (
+              <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 500 }}>
+                Please enter a valid 10-digit mobile number.
+              </p>
+            )}
           </div>
 
           {/* Arriving From */}
@@ -1193,7 +1200,7 @@ export default function CitizenBooking() {
             />
           </div>
 
-          <PrimaryButton onClick={saveAppointment} disabled={!name.trim() || !mobile.trim()}>
+          <PrimaryButton onClick={saveAppointment} disabled={!name.trim() || mobile.length !== 10}>
             {t.confirm}
           </PrimaryButton>
         </Card>
@@ -1314,6 +1321,12 @@ export default function CitizenBooking() {
             <span style={{ fontSize: 20 }}>💬</span> {t.whatsappBtn}
           </a>
 
+          {/* ── SECTION 1: Latest Announcements ── */}
+          <AnnouncementsSection announcements={announcements} />
+
+          {/* ── SECTION 2: Upcoming Events ── */}
+          <EventsSection events={upcomingEvents} />
+
           {/* Feedback Section */}
           <div
             style={{
@@ -1398,12 +1411,6 @@ export default function CitizenBooking() {
               </div>
             )}
           </div>
-
-          {/* ── NEW SECTION 1: Latest Announcements ── */}
-          <AnnouncementsSection announcements={announcements} />
-
-          {/* ── NEW SECTION 2: Upcoming Events ── */}
-          <EventsSection events={upcomingEvents} />
 
           <button
             style={{
