@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { useRealtime } from "../../hooks/useRealtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED SLOT ENGINE  (identical to CitizenBooking — do not diverge)
@@ -269,6 +270,19 @@ export default function ScheduleAppointment() {
 
   // Clear slot when duration changes
   useEffect(() => { setSelectedSlot(""); }, [duration]);
+
+  // ── Realtime: slot availability updates instantly when others book ──
+  useRealtime("appointments", () => {
+    if (form.date) {
+      supabase
+        .from("appointments")
+        .select("appointment_time, appointment_duration")
+        .eq("appointment_date", form.date)
+        .then(({ data, error }) => {
+          if (!error && data) setBookedAppointments(data);
+        });
+    }
+  });
 
   // ── Date change handler with holiday/weekend warning ──────────────────────
   function handleDateChange(dateStr) {
