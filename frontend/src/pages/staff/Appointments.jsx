@@ -149,9 +149,6 @@ export default function Appointments() {
     fetchAppointments();
   }, [selectedDate]);
 
-  // ── Realtime: refresh whenever appointments change in any tab/device ──
-  useRealtime("appointments", fetchAppointments);
-
   const fetchAppointments = async () => {
     const { data, error } = await supabase
       .from("appointments")
@@ -195,6 +192,9 @@ export default function Appointments() {
     d.setDate(d.getDate() + 1);
     setSelectedDate(toDateString(d));
   };
+
+  // ── Realtime: refresh whenever appointments change in any tab/device ──
+  useRealtime("appointments", fetchAppointments);
 
   const filtered = appointments.filter(a => {
     const matchSearch =
