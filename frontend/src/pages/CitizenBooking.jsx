@@ -1209,14 +1209,14 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
           sublabel = <span style={{ display:"block", fontSize:9, color:"#EF4444", fontWeight:700, marginTop:2 }}>Booked</span>;
 
         } else if (status === "too-short" || status === "run-blocked") {
-          // Not enough consecutive room for chosen duration — subtle grey, no alarming label
-          bg = "#F9FAFB";
+          // Not enough consecutive room for chosen duration — looks normal, just not clickable
+          bg = "#fff";
           border = "#E5E7EB";
-          color = "#C4C4C4";
-          fontWeight = 400;
+          color = "#374151";
+          fontWeight = 500;
           shadow = "none";
           scale = "scale(1)";
-          opacity = 0.6;
+          opacity = 1;
           sublabel = null;
 
         } else if (status === "past") {
@@ -1262,7 +1262,7 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
               color,
               fontWeight,
               fontSize: 12,
-              cursor: isClickable ? "pointer" : "not-allowed",
+              cursor: isClickable ? "pointer" : (status === "too-short" || status === "run-blocked") ? "default" : "not-allowed",
               opacity,
               transform: scale,
               transition: "all 0.15s",
