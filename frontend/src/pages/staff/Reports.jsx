@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRealtime } from "../../hooks/useRealtime";
 import { supabase } from "../../lib/supabase";
 
 export default function Reports() {
@@ -8,24 +9,29 @@ export default function Reports() {
   useEffect(() => {
     fetchAppointments();
     fetchMeetings();
-  }, []);
+  }, [fetchAppointments, fetchMeetings]);
 
-  const fetchAppointments = async () => {
+  // ── Realtime subscriptions ────────────────────────────────────────────────
+  useRealtime({ appointments: fetchAppointments, executive_meetings: fetchMeetings });
+
+  const fetchAppointments = useCallback(async () => {
     const { data, error } = await supabase
       .from("appointments")
       .select("*")
       .order("appointment_time", { ascending: true });
     if (error) { console.log(error); return; }
     setAppointments(data ?? []);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = useCallback(async () => {
     const { data, error } = await supabase
       .from("executive_meetings")
       .select("*");
     if (error) { console.log(error); return; }
     setMeetings(data ?? []);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── KPI calculations ──────────────────────────────────────────────────────
   const total        = appointments.length;
