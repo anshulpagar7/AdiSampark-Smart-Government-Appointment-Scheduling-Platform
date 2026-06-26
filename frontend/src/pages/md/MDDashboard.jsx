@@ -250,25 +250,298 @@ function TodayTimeline({ appointments, meetings }) {
   );
 }
 
-// ─── Tour Status Banner ───────────────────────────────────────────────────────
+// ─── Tour Diary Print ─────────────────────────────────────────────────────────
 
-function TourStatusBanner({ tour }) {
-  if (tour) {
+const TRIBAL_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAB4AG0DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDsKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/2Q==";
+
+function printTourDiaryMD(tours) {
+  const statusColor = { Upcoming: "#D97706", Completed: "#059669", Ongoing: "#2563EB", Cancelled: "#DC2626" };
+
+  const cards = tours.map(t => {
+    const sc = statusColor[t.status] || "#64748B";
+    const startFmt = t.start_date ? new Date(t.start_date + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
+    const endFmt   = t.end_date   ? new Date(t.end_date   + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "";
+    const dateStr  = endFmt && endFmt !== startFmt ? `${startFmt} – ${endFmt}` : startFmt;
+    const days     = t.start_date ? (() => { const a = new Date(t.start_date+"T00:00:00"); const b = new Date((t.end_date||t.start_date)+"T00:00:00"); return Math.max(1, Math.round((b-a)/(86400000))+1); })() : 1;
+
+    return `
+      <div class="tour-card">
+        <div class="card-header">
+          <div>
+            <div class="destination">📍 ${t.destination || "—"}</div>
+            <div class="purpose">${t.purpose || "—"}</div>
+          </div>
+          <div class="status-badge" style="color:${sc};border-color:${sc}20;background:${sc}12">${t.status || "—"}</div>
+        </div>
+        <div class="card-meta">
+          <div class="meta-item"><span class="meta-icon">📅</span>${dateStr}</div>
+          <div class="meta-item"><span class="meta-icon">⏳</span>${days} day${days > 1 ? "s" : ""}</div>
+          ${t.mode_of_travel ? `<div class="meta-item"><span class="meta-icon">🚗</span>${t.mode_of_travel}</div>` : ""}
+        </div>
+        ${t.remarks ? `<div class="remarks">📝 ${t.remarks}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  const totalDays = tours.reduce((acc, t) => {
+    if (!t.start_date) return acc;
+    const a = new Date(t.start_date+"T00:00:00");
+    const b = new Date((t.end_date||t.start_date)+"T00:00:00");
+    return acc + Math.max(1, Math.round((b-a)/86400000)+1);
+  }, 0);
+  const cities = new Set(tours.map(t => (t.destination||"").trim().toLowerCase()).filter(Boolean)).size;
+
+  const html = `
+    <html><head>
+      <title>Tour Diary — Leena Bansod, MD</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; padding: 32px; color: #111; background: #fff; }
+        .gov-header { display: flex; align-items: center; gap: 20px; padding-bottom: 18px; margin-bottom: 6px; border-bottom: 3px solid #6B1A1A; }
+        .logos { display: flex; align-items: center; gap: 10px; }
+        .logo-img { width: 64px; height: 64px; object-fit: contain; border-radius: 8px; }
+        .logo-div { width: 1px; height: 44px; background: #D1D5DB; }
+        .gov-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: #6B1A1A; text-transform: uppercase; margin-bottom: 3px; }
+        .gov-org { font-size: 15px; font-weight: 800; color: #111; margin-bottom: 3px; }
+        .gov-sub { font-size: 11px; color: #64748B; }
+        .report-title { font-size: 22px; font-weight: 900; color: #111; margin: 18px 0 4px; }
+        .report-sub { font-size: 13px; color: #64748B; margin-bottom: 20px; }
+        .stats-row { display: flex; gap: 16px; margin-bottom: 24px; }
+        .stat-box { flex: 1; border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 14px 18px; }
+        .stat-box .num { font-size: 28px; font-weight: 900; color: #6B1A1A; }
+        .stat-box .lbl { font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .tour-card { border: 1.5px solid #E5E7EB; border-radius: 12px; padding: 16px 20px; page-break-inside: avoid; }
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .destination { font-size: 15px; font-weight: 800; color: #111; margin-bottom: 3px; }
+        .purpose { font-size: 12px; color: #64748B; }
+        .status-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px; border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-left: 10px; }
+        .card-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+        .meta-item { font-size: 12px; color: #374151; display: flex; align-items: center; gap: 5px; }
+        .meta-icon { font-size: 13px; }
+        .remarks { font-size: 11px; color: #6B7280; font-style: italic; background: #F8FAFC; padding: 8px 12px; border-radius: 8px; margin-top: 8px; }
+        .footer { font-size: 10px; color: #9CA3AF; border-top: 1px solid #E5E7EB; padding-top: 12px; text-align: center; margin-top: 28px; }
+      </style>
+    </head>
+    <body>
+      <div class="gov-header">
+        <div class="logos">
+          <img class="logo-img" src="data:image/jpeg;base64,${TRIBAL_B64}" alt="Tribal" />
+          <div class="logo-div"></div>
+        </div>
+        <div>
+          <div class="gov-title">Government of Maharashtra</div>
+          <div class="gov-org">Maharashtra State Cooperative Tribal Development Corporation Limited</div>
+          <div class="gov-sub">Official Tour Diary — Managing Director</div>
+        </div>
+      </div>
+
+      <div class="report-title">✈️ Tour Diary</div>
+      <div class="report-sub">Travel record of Leena Bansod, Managing Director &nbsp;·&nbsp; Printed: ${new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" })}</div>
+
+      <div class="stats-row">
+        <div class="stat-box"><div class="num">${tours.length}</div><div class="lbl">Total Tours</div></div>
+        <div class="stat-box"><div class="num">${cities}</div><div class="lbl">Cities Visited</div></div>
+        <div class="stat-box"><div class="num">${totalDays}</div><div class="lbl">Days on Tour</div></div>
+        <div class="stat-box"><div class="num">${tours.filter(t=>t.status==="Completed").length}</div><div class="lbl">Completed</div></div>
+      </div>
+
+      <div class="grid">${cards}</div>
+
+      <div class="footer">SHABRI Smart Appointment Portal — Official Document &nbsp;·&nbsp; Printed on ${new Date().toLocaleString("en-IN")}</div>
+    </body></html>`;
+
+  const win = window.open("", "_blank");
+  win.document.write(html);
+  win.document.close();
+  win.print();
+}
+
+// ─── Tour Diary Section ───────────────────────────────────────────────────────
+
+function TourDiarySection({ tourDiary }) {
+  const today = getTodayLocalDate();
+
+  const activeTour = tourDiary.find(t => {
+    if (!t.start_date) return false;
+    const end = t.end_date || t.start_date;
+    return today >= t.start_date && today <= end && t.status !== "Cancelled";
+  }) || null;
+
+  const upcoming  = tourDiary.filter(t => t.start_date > today && t.status === "Upcoming")
+                             .sort((a,b) => a.start_date.localeCompare(b.start_date))
+                             .slice(0, 3);
+  const recent    = tourDiary.filter(t => (t.end_date || t.start_date) < today)
+                             .sort((a,b) => b.start_date.localeCompare(a.start_date))
+                             .slice(0, 3);
+
+  const statusCfg = {
+    Upcoming:  { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" },
+    Completed: { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0" },
+    Ongoing:   { bg: "#DBEAFE", color: "#2563EB", border: "#BFDBFE" },
+    Cancelled: { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA" },
+  };
+
+  function daysBetween(start, end) {
+    if (!start) return 1;
+    const a = new Date(start+"T00:00:00");
+    const b = new Date((end||start)+"T00:00:00");
+    return Math.max(1, Math.round((b-a)/86400000)+1);
+  }
+
+  function fmtDate(d) {
+    if (!d) return "";
+    return new Date(d+"T00:00:00").toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
+  }
+
+  function TourCard({ t, highlight }) {
+    const sc = statusCfg[t.status] || { bg:"#F1F5F9", color:"#64748B", border:"#E2E8F0" };
+    const days = daysBetween(t.start_date, t.end_date);
+    const dateLabel = t.end_date && t.end_date !== t.start_date
+      ? `${fmtDate(t.start_date)} – ${fmtDate(t.end_date)}`
+      : fmtDate(t.start_date);
+
     return (
-      <div style={{ background: "linear-gradient(135deg,#FEF3C7,#FFFBEB)", border: "1.5px solid #FDE68A", borderRadius: 16, padding: "16px 24px", marginBottom: 22, display: "flex", alignItems: "center", gap: 16, boxShadow: "0 4px 16px rgba(245,158,11,0.15)" }}>
-        <span style={{ fontSize: 28, flexShrink: 0 }}>✈️</span>
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: "0 0 2px", fontSize: 11, fontWeight: 700, color: "#D97706", letterSpacing: "0.1em", textTransform: "uppercase" }}>Currently on Tour</p>
-          <p style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, color: "#111827" }}>Madam is currently on Tour — {tour.destination}</p>
-          <p style={{ margin: 0, fontSize: 13, color: "#78350F" }}>{tour.purpose} &nbsp;·&nbsp; {formatDateRange(tour.start_date, tour.end_date)}</p>
+      <div style={{
+        background: highlight ? "linear-gradient(135deg,#FFFBEB,#FEF3C7)" : "#fff",
+        border: `1.5px solid ${highlight ? "#FDE68A" : "#E5E7EB"}`,
+        borderRadius: 16,
+        padding: "18px 20px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        position: "relative",
+        overflow: "hidden",
+        boxShadow: highlight ? "0 6px 24px rgba(245,158,11,0.18)" : "0 2px 8px rgba(0,0,0,0.05)",
+      }}>
+        {/* Active pulse */}
+        {highlight && (
+          <div style={{ position:"absolute", top:14, right:14 }}>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:"#D97706", color:"#fff", fontSize:10, fontWeight:800, padding:"3px 10px", borderRadius:99, letterSpacing:"0.06em" }}>
+              ✈️ ACTIVE
+            </span>
+          </div>
+        )}
+
+        {/* Destination */}
+        <div>
+          <p style={{ margin:"0 0 2px", fontSize:15, fontWeight:800, color:"#111827" }}>📍 {t.destination}</p>
+          <p style={{ margin:0, fontSize:12, color:"#6B7280", lineHeight:1.5 }}>{t.purpose}</p>
+        </div>
+
+        {/* Meta row */}
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          <span style={{ fontSize:11, fontWeight:600, color:"#374151", background:"#F8FAFC", border:"1px solid #E5E7EB", borderRadius:8, padding:"3px 9px" }}>
+            📅 {dateLabel}
+          </span>
+          <span style={{ fontSize:11, fontWeight:600, color:"#374151", background:"#F8FAFC", border:"1px solid #E5E7EB", borderRadius:8, padding:"3px 9px" }}>
+            ⏳ {days} day{days > 1 ? "s" : ""}
+          </span>
+          {t.mode_of_travel && (
+            <span style={{ fontSize:11, fontWeight:600, color:"#374151", background:"#F8FAFC", border:"1px solid #E5E7EB", borderRadius:8, padding:"3px 9px" }}>
+              {t.mode_of_travel}
+            </span>
+          )}
+        </div>
+
+        {/* Status badge */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:sc.bg, color:sc.color, border:`1px solid ${sc.border}`, fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:99 }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:sc.color, display:"inline-block" }} />
+            {t.status}
+          </span>
+          {t.remarks && (
+            <span style={{ fontSize:11, color:"#9CA3AF", fontStyle:"italic", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={t.remarks}>
+              📝 {t.remarks}
+            </span>
+          )}
         </div>
       </div>
     );
   }
+
+  const totalTours  = tourDiary.length;
+  const totalDays   = tourDiary.reduce((acc,t) => acc + daysBetween(t.start_date, t.end_date), 0);
+  const cities      = new Set(tourDiary.map(t=>(t.destination||"").trim().toLowerCase()).filter(Boolean)).size;
+  const completed   = tourDiary.filter(t=>t.status==="Completed").length;
+
   return (
-    <div style={{ background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 16, padding: "12px 24px", marginBottom: 22, display: "flex", alignItems: "center", gap: 12 }}>
-      <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#10B981", flexShrink: 0, display: "inline-block" }} />
-      <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#065F46" }}>🟢 Madam is in Office</p>
+    <div style={{ background:"#fff", borderRadius:22, padding:28, boxShadow:"0 8px 32px rgba(0,0,0,0.06)", marginBottom:28 }}>
+
+      {/* Section header */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:22 }}>
+        <div>
+          <p style={{ margin:0, fontSize:11, fontWeight:700, color:"#6B7280", letterSpacing:"0.08em", textTransform:"uppercase" }}>Personal Record</p>
+          <h2 style={{ margin:"2px 0 0", fontSize:20, fontWeight:800, color:"#111827" }}>✈️ Tour Diary</h2>
+        </div>
+        <button
+          onClick={() => printTourDiaryMD(tourDiary)}
+          style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#6B1A1A,#9B2226)", color:"#fff", border:"none", padding:"10px 18px", borderRadius:12, fontSize:13, fontWeight:700, cursor:"pointer", boxShadow:"0 4px 12px rgba(107,26,26,0.3)" }}
+        >
+          🖨 Print Tour Diary
+        </button>
+      </div>
+
+      {/* Mini stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
+        {[
+          { label:"Total Tours",    value:totalTours,  color:"#6B1A1A", icon:"🗺️" },
+          { label:"Cities Visited", value:cities,       color:"#2563EB", icon:"🏙️" },
+          { label:"Days on Tour",   value:totalDays,    color:"#D97706", icon:"📆" },
+          { label:"Completed",      value:completed,    color:"#059669", icon:"✅" },
+        ].map(s => (
+          <div key={s.label} style={{ background:"#F8FAFC", borderRadius:14, padding:"14px 16px", border:`2px solid ${s.color}20`, borderTop:`3px solid ${s.color}` }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+              <span style={{ fontSize:18 }}>{s.icon}</span>
+            </div>
+            <p style={{ margin:0, fontSize:26, fontWeight:900, color:s.color, lineHeight:1 }}>{s.value}</p>
+            <p style={{ margin:"4px 0 0", fontSize:11, color:"#6B7280", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Active tour spotlight */}
+      {activeTour && (
+        <div style={{ marginBottom:20 }}>
+          <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#D97706", letterSpacing:"0.08em", textTransform:"uppercase" }}>🔴 Currently Active</p>
+          <TourCard t={activeTour} highlight={true} />
+        </div>
+      )}
+
+      {/* Upcoming + Recent side by side */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+        <div>
+          <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#2563EB", letterSpacing:"0.08em", textTransform:"uppercase" }}>🔜 Upcoming Tours</p>
+          {upcoming.length === 0 ? (
+            <div style={{ background:"#F8FAFC", border:"1.5px dashed #E5E7EB", borderRadius:14, padding:"24px", textAlign:"center", color:"#9CA3AF" }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:600 }}>No upcoming tours</p>
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {upcoming.map((t,i) => <TourCard key={i} t={t} highlight={false} />)}
+            </div>
+          )}
+        </div>
+        <div>
+          <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#059669", letterSpacing:"0.08em", textTransform:"uppercase" }}>🔙 Recent Tours</p>
+          {recent.length === 0 ? (
+            <div style={{ background:"#F8FAFC", border:"1.5px dashed #E5E7EB", borderRadius:14, padding:"24px", textAlign:"center", color:"#9CA3AF" }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:600 }}>No recent tours</p>
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {recent.map((t,i) => <TourCard key={i} t={t} highlight={false} />)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {tourDiary.length === 0 && (
+        <div style={{ textAlign:"center", padding:"40px 0", color:"#9CA3AF" }}>
+          <div style={{ fontSize:44, marginBottom:12 }}>✈️</div>
+          <p style={{ margin:0, fontSize:15, fontWeight:700, color:"#374151" }}>No tour records yet</p>
+          <p style={{ margin:"6px 0 0", fontSize:13 }}>Tours added in the Tour Diary module will appear here.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,12 +629,6 @@ export default function MDDashboard() {
   const totalCount      = appointments.length;
   const progressPct     = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  const activeTour = tourDiary.find(t => {
-    if (!t.start_date) return false;
-    const end = t.end_date || t.start_date;
-    return today >= t.start_date && today <= end && t.status !== "Cancelled";
-  }) || null;
-
   return (
     <div style={{ minHeight: "100vh", background: "#F0F4FF", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
 
@@ -412,9 +679,6 @@ export default function MDDashboard() {
       </div>
 
       <div style={{ padding: "32px 36px 48px", animation: "fadeSlideUp 0.4s ease" }}>
-
-        {/* TOUR STATUS */}
-        <TourStatusBanner tour={activeTour} />
 
         {/* WELCOME BANNER */}
         <div style={{ background: "linear-gradient(120deg, #1E3A8A 0%, #2563EB 50%, #7C3AED 100%)", borderRadius: 24, padding: "36px 40px", marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 8px 32px rgba(37,99,235,0.35)", position: "relative", overflow: "hidden" }}>
@@ -582,6 +846,9 @@ export default function MDDashboard() {
           <TodayTimeline appointments={appointments} meetings={meetings} />
         </div>
 
+        {/* TOUR DIARY */}
+        <TourDiarySection tourDiary={tourDiary} />
+
         {/* FOCUS + QUEUE */}
         <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 18 }}>
 
@@ -591,7 +858,6 @@ export default function MDDashboard() {
             <FocusItem title="Citizens Waiting"  value={waitingCitizens.length} color="#F59E0B" bg="#FEF3C7" />
             <FocusItem title="Meetings Today"     value={meetings.length}        color="#2563EB" bg="#DBEAFE" />
             <FocusItem title="Completed Citizens" value={completedCount}         color="#10B981" bg="#D1FAE5" />
-            {activeTour && <FocusItem title="On Tour" value="✈️" color="#D97706" bg="#FEF3C7" />}
             <div style={{ marginTop: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>Daily Progress</span>
