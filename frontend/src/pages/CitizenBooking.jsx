@@ -9,113 +9,109 @@ import tribalLogo from "../assets/tribal-logo.jpg";
 
 const OFFICER = { name: "Leena Bansod", designation: "Managing Director" };
 
-const TIME_SLOTS = [
-  { time: "11:00 AM", group: "morning" },
-  { time: "11:10 AM", group: "morning" },
-  { time: "11:20 AM", group: "morning" },
-  { time: "11:30 AM", group: "morning" },
-  { time: "11:40 AM", group: "morning" },
-  { time: "11:50 AM", group: "morning" },
-  { time: "12:00 PM", group: "morning" },
-  { time: "12:10 PM", group: "morning" },
-  { time: "12:20 PM", group: "morning" },
-  { time: "12:30 PM", group: "morning" },
-  { time: "12:40 PM", group: "morning" },
-  { time: "12:50 PM", group: "morning" },
-  { time: "01:00 PM", group: "morning" },
-  { time: "01:10 PM", group: "morning" },
-  { time: "01:20 PM", group: "morning" },
-  { time: "LUNCH", group: "break", disabled: true },
-  { time: "02:30 PM", group: "afternoon" },
-  { time: "02:40 PM", group: "afternoon" },
-  { time: "02:50 PM", group: "afternoon" },
-  { time: "03:00 PM", group: "afternoon" },
-  { time: "03:10 PM", group: "afternoon" },
-  { time: "03:20 PM", group: "afternoon" },
-  { time: "03:30 PM", group: "afternoon" },
-  { time: "03:40 PM", group: "afternoon" },
-  { time: "03:50 PM", group: "afternoon" },
-  { time: "04:00 PM", group: "afternoon" },
-  { time: "04:10 PM", group: "afternoon" },
-  { time: "04:20 PM", group: "afternoon" },
-  { time: "04:30 PM", group: "afternoon" },
-  { time: "04:40 PM", group: "afternoon" },
-  { time: "04:50 PM", group: "afternoon" },
+const TOTAL_STEPS = 6; // now 6 steps (duration added between purpose and date/slot)
+
+const DURATION_OPTIONS = [5, 10, 15, 20, 25]; // minutes
+
+// ─── Slot Engine ──────────────────────────────────────────────────────────────
+//
+// Office hours:
+//   Morning   : 12:00 PM – 1:20 PM  (last slot starts 1:20, ends 1:25; lunch at 1:30)
+//   Afternoon : 2:30 PM  – 4:50 PM  (last slot starts 4:50, ends 4:55; office closes 5:00)
+//
+// Pomodoro rhythm: 5 work slots (25 min) then a 5-min break (slot not shown).
+//
+// Resulting groups (each exactly 5 bookable slots):
+//   A: 12:00 12:05 12:10 12:15 12:20  [break 12:25]
+//   B: 12:30 12:35 12:40 12:45 12:50  [break 12:55]
+//   C:  1:00  1:05  1:10  1:15  1:20  [lunch  1:30–2:30]
+//   D:  2:30  2:35  2:40  2:45  2:50  [break  2:55]
+//   E:  3:00  3:05  3:10  3:15  3:20  [break  3:25]
+//   F:  3:30  3:35  3:40  3:45  3:50  [break  3:55]
+//   G:  4:00  4:05  4:10  4:15  4:20  [break  4:25]
+//   H:  4:30  4:35  4:40  4:45  4:50  [office closes 5:00]
+
+const SLOT_GROUPS = [
+  // label shown as section header, slots array
+  { label: "Morning Session", section: "morning", slots: ["12:00 PM","12:05 PM","12:10 PM","12:15 PM","12:20 PM"] },
+  { label: "Morning Session", section: "morning", slots: ["12:30 PM","12:35 PM","12:40 PM","12:45 PM","12:50 PM"] },
+  { label: "Morning Session", section: "morning", slots: ["01:00 PM","01:05 PM","01:10 PM","01:15 PM","01:20 PM"] },
+  { label: "Afternoon Session", section: "afternoon", slots: ["02:30 PM","02:35 PM","02:40 PM","02:45 PM","02:50 PM"] },
+  { label: "Afternoon Session", section: "afternoon", slots: ["03:00 PM","03:05 PM","03:10 PM","03:15 PM","03:20 PM"] },
+  { label: "Afternoon Session", section: "afternoon", slots: ["03:30 PM","03:35 PM","03:40 PM","03:45 PM","03:50 PM"] },
+  { label: "Afternoon Session", section: "afternoon", slots: ["04:00 PM","04:05 PM","04:10 PM","04:15 PM","04:20 PM"] },
+  { label: "Afternoon Session", section: "afternoon", slots: ["04:30 PM","04:35 PM","04:40 PM","04:45 PM","04:50 PM"] },
 ];
 
-const TOTAL_STEPS = 5;
+// Flat ordered list of all bookable slot strings
+const ALL_SLOTS = SLOT_GROUPS.flatMap(g => g.slots);
 
-// ─── Feature 4: Time filtering helper ─────────────────────────────────────────
-
-function timeToMinutes(time) {
-  const d = new Date(`1970-01-01 ${time}`);
+// Convert a slot string like "12:05 PM" to minutes-since-midnight
+function slotToMinutes(slotStr) {
+  const d = new Date(`1970-01-01 ${slotStr}`);
   return d.getHours() * 60 + d.getMinutes();
 }
 
-// ─── Holiday: Office Closed Card ──────────────────────────────────────────────
+// Given a starting slot and duration (minutes), return array of all slot strings it occupies.
+// Returns null if the run is invalid (crosses a break or leaves valid slots).
+function getOccupiedSlots(startSlot, durationMinutes) {
+  const slotsNeeded = durationMinutes / 5;
+  const startIdx = ALL_SLOTS.indexOf(startSlot);
+  if (startIdx === -1) return null;
+
+  const occupied = [];
+  for (let i = 0; i < slotsNeeded; i++) {
+    const slotIdx = startIdx + i;
+    if (slotIdx >= ALL_SLOTS.length) return null; // ran off end
+    occupied.push(ALL_SLOTS[slotIdx]);
+  }
+
+  // Validate: all occupied slots must be in the SAME group
+  const groupForSlot = (slot) => SLOT_GROUPS.findIndex(g => g.slots.includes(slot));
+  const firstGroup = groupForSlot(occupied[0]);
+  if (firstGroup === -1) return null;
+  for (const s of occupied) {
+    if (groupForSlot(s) !== firstGroup) return null; // crosses a break
+  }
+
+  return occupied;
+}
+
+// Expand booked appointments (each has appointment_time + appointment_duration)
+// into a Set of all occupied slot strings.
+function buildOccupiedSet(bookedAppointments) {
+  const occupied = new Set();
+  for (const appt of bookedAppointments) {
+    const dur = appt.appointment_duration ?? 5;
+    const slots = getOccupiedSlots(appt.appointment_time, dur);
+    if (slots) slots.forEach(s => occupied.add(s));
+  }
+  return occupied;
+}
+
+// ─── Feature 4: Time filtering helper ────────────────────────────────────────
+
+function timeToMinutes(slotStr) {
+  return slotToMinutes(slotStr);
+}
+
+// ─── Holiday: Office Closed Card ─────────────────────────────────────────────
 
 function OfficeClosedCard({ reason, dateStr }) {
   const displayDate = dateStr
-    ? new Date(dateStr).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      })
+    ? new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
     : "";
-
   return (
-    <div
-      style={{
-        background: "#FEF2F2",
-        border: "1.5px solid #FECACA",
-        borderRadius: 14,
-        padding: "20px 22px",
-        marginBottom: 16,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        textAlign: "center",
-        gap: 6,
-      }}
-    >
+    <div style={{
+      background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14,
+      padding: "20px 22px", marginBottom: 16, display: "flex", flexDirection: "column",
+      alignItems: "center", textAlign: "center", gap: 6,
+    }}>
       <span style={{ fontSize: 28 }}>🚫</span>
-      <p
-        style={{
-          margin: 0,
-          fontWeight: 800,
-          fontSize: 16,
-          color: "#DC2626",
-        }}
-      >
-        Office Closed
-      </p>
-      {reason && (
-        <p
-          style={{
-            margin: 0,
-            fontWeight: 600,
-            fontSize: 15,
-            color: "#991B1B",
-          }}
-        >
-          {reason}
-        </p>
-      )}
-      {displayDate && (
-        <p style={{ margin: 0, fontSize: 13, color: "#B91C1C" }}>
-          {displayDate}
-        </p>
-      )}
-      <p
-        style={{
-          margin: "4px 0 0",
-          fontSize: 13,
-          color: "#6B7280",
-          fontWeight: 500,
-        }}
-      >
-        Please select another date.
-      </p>
+      <p style={{ margin: 0, fontWeight: 800, fontSize: 16, color: "#DC2626" }}>Office Closed</p>
+      {reason && <p style={{ margin: 0, fontWeight: 600, fontSize: 15, color: "#991B1B" }}>{reason}</p>}
+      {displayDate && <p style={{ margin: 0, fontSize: 13, color: "#B91C1C" }}>{displayDate}</p>}
+      <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6B7280", fontWeight: 500 }}>Please select another date.</p>
     </div>
   );
 }
@@ -124,7 +120,7 @@ function OfficeClosedCard({ reason, dateStr }) {
 
 function ProgressBar({ step, t }) {
   if (step === 0) return null;
-  const current = step > 5 ? TOTAL_STEPS : step;
+  const current = step > TOTAL_STEPS ? TOTAL_STEPS : step;
   const pct = Math.round((current / TOTAL_STEPS) * 100);
   return (
     <div style={pb.wrapper}>
@@ -132,7 +128,7 @@ function ProgressBar({ step, t }) {
         <div style={{ ...pb.fill, width: `${pct}%` }} />
       </div>
       <p style={pb.label}>
-        {step > 5 ? t.complete : `${t.step} ${current} ${t.of} ${TOTAL_STEPS}`}
+        {step > TOTAL_STEPS ? t.complete : `${t.step} ${current} ${t.of} ${TOTAL_STEPS}`}
       </p>
     </div>
   );
@@ -148,29 +144,18 @@ const pb = {
     transition: "width 0.4s ease",
   },
   label: {
-    fontSize: 12,
-    color: "#6B7280",
-    textAlign: "right",
-    marginTop: 4,
-    marginBottom: 0,
-    fontWeight: 600,
-    letterSpacing: "0.04em",
+    fontSize: 12, color: "#6B7280", textAlign: "right", marginTop: 4,
+    marginBottom: 0, fontWeight: 600, letterSpacing: "0.04em",
   },
 };
 
 function Card({ children, style = {} }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 20,
-        padding: "32px 28px",
-        boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
-        maxWidth: 640,
-        margin: "20px auto 0",
-        ...style,
-      }}
-    >
+    <div style={{
+      background: "#fff", borderRadius: 20, padding: "32px 28px",
+      boxShadow: "0 4px 24px rgba(37,99,235,0.07)", maxWidth: 640,
+      margin: "20px auto 0", ...style,
+    }}>
       {children}
     </div>
   );
@@ -190,17 +175,11 @@ function PrimaryButton({ children, onClick, disabled = false }) {
       onClick={onClick}
       disabled={disabled}
       style={{
-        width: "100%",
-        padding: "16px",
-        fontSize: 16,
-        fontWeight: 700,
-        border: "none",
-        borderRadius: 12,
+        width: "100%", padding: "16px", fontSize: 16, fontWeight: 700,
+        border: "none", borderRadius: 12,
         background: disabled ? "#93C5FD" : "linear-gradient(135deg,#2563EB,#1E3A8A)",
-        color: "#fff",
-        cursor: disabled ? "not-allowed" : "pointer",
-        marginTop: 16,
-        letterSpacing: "0.02em",
+        color: "#fff", cursor: disabled ? "not-allowed" : "pointer",
+        marginTop: 16, letterSpacing: "0.02em",
         boxShadow: disabled ? "none" : "0 4px 14px rgba(37,99,235,0.35)",
         transition: "transform 0.1s",
       }}
@@ -212,153 +191,57 @@ function PrimaryButton({ children, onClick, disabled = false }) {
 
 function OfficerBadge({ t }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        background: "#EFF6FF",
-        border: "1px solid #BFDBFE",
-        borderRadius: 14,
-        padding: "16px 20px",
-        marginBottom: 24,
-      }}
-    >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
-          background: "linear-gradient(135deg,#2563EB,#1E3A8A)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#fff",
-          fontSize: 20,
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-      >
-        LB
-      </div>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 14, background: "#EFF6FF",
+      border: "1px solid #BFDBFE", borderRadius: 14, padding: "16px 20px", marginBottom: 24,
+    }}>
+      <div style={{
+        width: 48, height: 48, borderRadius: "50%",
+        background: "linear-gradient(135deg,#2563EB,#1E3A8A)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#fff", fontSize: 20, fontWeight: 700, flexShrink: 0,
+      }}>LB</div>
       <div>
-        <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#1E3A8A" }}>
-          {OFFICER.name}
-        </p>
-        <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>
-          {t.designationMD}
-        </p>
+        <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#1E3A8A" }}>{OFFICER.name}</p>
+        <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>{t.designationMD}</p>
       </div>
     </div>
   );
 }
-
-// ─── Hero Dual Logo Row (tribal + tdc, both real images) ──────────────────────
 
 function DualLogoRow() {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 20,
-        marginBottom: 18,
-      }}
-    >
-      {/* Tribal logo */}
-      <img
-        src={tribalLogo}
-        alt="Tribal Logo"
-        style={{
-          width: 68,
-          height: 68,
-          borderRadius: "50%",
-          objectFit: "cover",
-          border: "2px solid rgba(255,255,255,0.4)",
-          background: "#fff",
-          flexShrink: 0,
-        }}
-      />
-
-      {/* Divider */}
-      <div
-        style={{
-          width: 1,
-          height: 44,
-          background: "rgba(255,255,255,0.3)",
-          flexShrink: 0,
-        }}
-      />
-
-      {/* TDC logo */}
-      <img
-        src={tdcLogo}
-        alt="TDC Logo"
-        style={{
-          width: 68,
-          height: 68,
-          borderRadius: "50%",
-          objectFit: "cover",
-          border: "2px solid rgba(255,255,255,0.4)",
-          background: "#fff",
-          flexShrink: 0,
-        }}
-      />
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginBottom: 18 }}>
+      <img src={tribalLogo} alt="Tribal Logo" style={{
+        width: 68, height: 68, borderRadius: "50%", objectFit: "cover",
+        border: "2px solid rgba(255,255,255,0.4)", background: "#fff", flexShrink: 0,
+      }} />
+      <div style={{ width: 1, height: 44, background: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+      <img src={tdcLogo} alt="TDC Logo" style={{
+        width: 68, height: 68, borderRadius: "50%", objectFit: "cover",
+        border: "2px solid rgba(255,255,255,0.4)", background: "#fff", flexShrink: 0,
+      }} />
     </div>
   );
 }
 
-// ─── NEW: Latest Announcements Section ────────────────────────────────────────
-
 function AnnouncementsSection({ announcements }) {
   if (!announcements || announcements.length === 0) return null;
-
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 20,
-        padding: "22px",
-        marginTop: 16,
-        boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
-      }}
-    >
-      <p
-        style={{
-          margin: "0 0 14px",
-          fontWeight: 700,
-          fontSize: 13,
-          color: "#2563EB",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
+    <div style={{
+      background: "#fff", borderRadius: 20, padding: "22px", marginTop: 16,
+      boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
+    }}>
+      <p style={{ margin: "0 0 14px", fontWeight: 700, fontSize: 13, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.08em" }}>
         📢 Latest Announcements
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {announcements.map((item, idx) => (
-          <div
-            key={item.id ?? idx}
-            style={{
-              background: "#F8FAFF",
-              border: "1px solid #DBEAFE",
-              borderRadius: 12,
-              padding: "14px 16px",
-              borderLeft: "4px solid #2563EB",
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                color: "#1E293B",
-                lineHeight: 1.6,
-                fontWeight: 500,
-              }}
-            >
-              {item.message}
-            </p>
+          <div key={item.id ?? idx} style={{
+            background: "#F8FAFF", border: "1px solid #DBEAFE", borderRadius: 12,
+            padding: "14px 16px", borderLeft: "4px solid #2563EB",
+          }}>
+            <p style={{ margin: 0, fontSize: 14, color: "#1E293B", lineHeight: 1.6, fontWeight: 500 }}>{item.message}</p>
           </div>
         ))}
       </div>
@@ -366,134 +249,52 @@ function AnnouncementsSection({ announcements }) {
   );
 }
 
-// ─── NEW: Upcoming Events Section ─────────────────────────────────────────────
-
 function EventsSection({ events }) {
   if (!events || events.length === 0) return null;
-
-  // Category colour mapping for visual variety
   const categoryColors = {
-    Camp: { bg: "#F0FDF4", border: "#BBF7D0", text: "#15803D" },
+    Camp:        { bg: "#F0FDF4", border: "#BBF7D0", text: "#15803D" },
     Scholarship: { bg: "#FFF7ED", border: "#FED7AA", text: "#C2410C" },
-    Awareness: { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8" },
-    default: { bg: "#F5F3FF", border: "#DDD6FE", text: "#6D28D9" },
+    Awareness:   { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8" },
+    default:     { bg: "#F5F3FF", border: "#DDD6FE", text: "#6D28D9" },
   };
-
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 20,
-        padding: "22px",
-        marginTop: 16,
-        boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
-      }}
-    >
-      <p
-        style={{
-          margin: "0 0 14px",
-          fontWeight: 700,
-          fontSize: 13,
-          color: "#2563EB",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
+    <div style={{
+      background: "#fff", borderRadius: 20, padding: "22px", marginTop: 16,
+      boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
+    }}>
+      <p style={{ margin: "0 0 14px", fontWeight: 700, fontSize: 13, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.08em" }}>
         🗓 Upcoming Events
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {events.map((event, idx) => {
           const colors = categoryColors[event.category] ?? categoryColors.default;
           const formattedDate = event.date
-            ? new Date(event.date).toLocaleDateString("en-IN", {
-                day: "2-digit",
-                month: "long",
-                year: "numeric",
-              })
+            ? new Date(event.date).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
             : "";
-
           return (
-            <div
-              key={event.id ?? idx}
-              style={{
-                background: colors.bg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: 12,
-                padding: "14px 16px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              {/* Title + Category badge */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <p
-                  style={{
-                    margin: 0,
-                    fontWeight: 700,
-                    fontSize: 14,
-                    color: "#111827",
-                    lineHeight: 1.4,
-                    flex: 1,
-                  }}
-                >
+            <div key={event.id ?? idx} style={{
+              background: colors.bg, border: `1px solid ${colors.border}`,
+              borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6,
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#111827", lineHeight: 1.4, flex: 1 }}>
                   {event.title}
                 </p>
                 {event.category && (
-                  <span
-                    style={{
-                      background: colors.border,
-                      color: colors.text,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: "3px 9px",
-                      borderRadius: 99,
-                      whiteSpace: "nowrap",
-                      letterSpacing: "0.04em",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {event.category}
-                  </span>
+                  <span style={{
+                    background: colors.border, color: colors.text, fontSize: 11, fontWeight: 700,
+                    padding: "3px 9px", borderRadius: 99, whiteSpace: "nowrap",
+                    letterSpacing: "0.04em", flexShrink: 0,
+                  }}>{event.category}</span>
                 )}
               </div>
-
-              {/* Date */}
               {formattedDate && (
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 12,
-                    color: "#6B7280",
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                  }}
-                >
+                <p style={{ margin: 0, fontSize: 12, color: "#6B7280", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
                   <span>📅</span> {formattedDate}
                 </p>
               )}
-
-              {/* Short description */}
               {event.short_description && (
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 13,
-                    color: "#374151",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {event.short_description}
-                </p>
+                <p style={{ margin: 0, fontSize: 13, color: "#374151", lineHeight: 1.5 }}>{event.short_description}</p>
               )}
             </div>
           );
@@ -503,7 +304,7 @@ function EventsSection({ events }) {
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CitizenBooking() {
   const [language, setLanguage] = useState("en");
@@ -511,6 +312,7 @@ export default function CitizenBooking() {
 
   const [appointmentType, setAppointmentType] = useState("");
   const [selectedPurpose, setSelectedPurpose] = useState("");
+  const [appointmentDuration, setAppointmentDuration] = useState(5); // NEW
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [name, setName] = useState("");
@@ -521,16 +323,13 @@ export default function CitizenBooking() {
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
-  // ── Holiday state ──────────────────────────────────────────────────────────
   const [holidays, setHolidays] = useState([]);
 
-  // ── Booked slots state (Feature 1 & 2) ────────────────────────────────────
-  const [bookedSlots, setBookedSlots] = useState([]);
+  // Booked appointments with duration info
+  const [bookedAppointments, setBookedAppointments] = useState([]);
 
-  // ── Dynamic queue position (Feature 4) ────────────────────────────────────
   const [queuePosition, setQueuePosition] = useState(null);
 
-  // ── NEW: Post-booking info state ───────────────────────────────────────────
   const [announcements, setAnnouncements] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
 
@@ -538,36 +337,28 @@ export default function CitizenBooking() {
 
   const t = translations[language];
 
-  // ── Fetch holidays on mount ────────────────────────────────────────────────
+  // ── Fetch holidays ────────────────────────────────────────────────────────
   useEffect(() => {
     async function fetchHolidays() {
       const { data, error } = await supabase
         .from("holidays")
         .select("id, holiday_name, holiday_date, holiday_type, category");
-      if (!error && data) {
-        setHolidays(data);
-      }
+      if (!error && data) setHolidays(data);
     }
     fetchHolidays();
   }, []);
 
-  // ── NEW: Fetch announcements & events when confirmation screen shows ───────
+  // ── Fetch announcements & events on confirmation ──────────────────────────
   useEffect(() => {
-    if (step !== 6) return;
-
+    if (step !== 7) return; // step 7 is confirmation (0-indexed: 0 landing, 1-6 steps, 7 confirm)
     async function fetchPostBookingInfo() {
-      // Latest 3 announcements
       const { data: announcementData, error: announcementError } = await supabase
         .from("announcements")
         .select("id, message, created_at")
         .order("created_at", { ascending: false })
         .limit(3);
+      if (!announcementError && announcementData) setAnnouncements(announcementData);
 
-      if (!announcementError && announcementData) {
-        setAnnouncements(announcementData);
-      }
-
-      // Upcoming 3 events visible to citizens
       const { data: eventData, error: eventError } = await supabase
         .from("events")
         .select("id, title, date, category, short_description")
@@ -575,119 +366,106 @@ export default function CitizenBooking() {
         .eq("status", "Upcoming")
         .order("date", { ascending: true })
         .limit(3);
-
-      if (!eventError && eventData) {
-        setUpcomingEvents(eventData);
-      }
+      if (!eventError && eventData) setUpcomingEvents(eventData);
     }
-
     fetchPostBookingInfo();
   }, [step]);
 
-  // ── Holiday / Weekend helpers ──────────────────────────────────────────────
+  // ── Holiday / Weekend helpers ─────────────────────────────────────────────
 
-  /**
-   * Returns true if the given date string (YYYY-MM-DD) falls on a Saturday or Sunday.
-   */
   function isWeekend(dateStr) {
     if (!dateStr) return false;
-    // Use UTC parsing to avoid timezone shifting the day
     const parts = dateStr.split("-");
-    const d = new Date(
-      parseInt(parts[0], 10),
-      parseInt(parts[1], 10) - 1,
-      parseInt(parts[2], 10)
-    );
-    const day = d.getDay(); // 0 = Sun, 6 = Sat
+    const d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    const day = d.getDay();
     return day === 0 || day === 6;
   }
 
-  /**
-   * Determines if the office is closed for the effective booking date.
-   * Returns { closed: boolean, reason: string|null }
-   * Order: holiday check → weekend check.
-   */
   function getOfficeStatus(dateStr) {
     if (!dateStr) return { closed: false, reason: null };
-
-    // 1. Holiday check — strict YYYY-MM-DD string comparison only (BUG 3 FIX)
-    const holiday = holidays.find((h) => h.holiday_date === dateStr);
-
-    // Debug logs
-    console.log("Appointment Type:", appointmentType);
-    console.log("Today:", todayStr);
-    console.log("Selected Date:", selectedDate);
-    console.log("Effective Date:", dateStr);
-    console.log("Holidays:", holidays);
-    console.log("Holiday Found:", holiday);
-
-    if (holiday) {
-      return { closed: true, reason: holiday.holiday_name };
-    }
-
-    // 2. Weekend check
+    const holiday = holidays.find(h => h.holiday_date === dateStr);
+    if (holiday) return { closed: true, reason: holiday.holiday_name };
     if (isWeekend(dateStr)) {
       const parts = dateStr.split("-");
-      const d = new Date(
-        parseInt(parts[0], 10),
-        parseInt(parts[1], 10) - 1,
-        parseInt(parts[2], 10)
-      );
-      const dayName = d.getDay() === 0 ? "Sunday" : "Saturday";
-      return { closed: true, reason: dayName };
+      const d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+      return { closed: true, reason: d.getDay() === 0 ? "Sunday" : "Saturday" };
     }
-
     return { closed: false, reason: null };
   }
 
-  // ── Derive effective booking date ──────────────────────────────────────────
-  // BUG 1 FIX: use local date parts — toISOString() is UTC and can shift the day
+  // ── Today string (local) ──────────────────────────────────────────────────
   const today = new Date();
   const todayStr =
-    today.getFullYear() +
-    "-" +
-    String(today.getMonth() + 1).padStart(2, "0") +
-    "-" +
-    String(today.getDate()).padStart(2, "0");
+    today.getFullYear() + "-" +
+    String(today.getMonth()+1).padStart(2,"0") + "-" +
+    String(today.getDate()).padStart(2,"0");
 
   const effectiveDateStr =
-    appointmentType === "today"
-      ? todayStr
-      : appointmentType === "future"
-      ? selectedDate
-      : "";
+    appointmentType === "today" ? todayStr :
+    appointmentType === "future" ? selectedDate : "";
 
   const officeStatus = getOfficeStatus(effectiveDateStr);
 
-  // ── Fetch booked slots whenever effective date changes (Feature 1 & 2) ────
+  // ── Fetch booked appointments for the effective date ──────────────────────
   useEffect(() => {
-    if (!effectiveDateStr) {
-      setBookedSlots([]);
-      return;
-    }
-    async function fetchBookedSlots() {
+    if (!effectiveDateStr) { setBookedAppointments([]); return; }
+    async function fetchBooked() {
       const { data, error } = await supabase
         .from("appointments")
-        .select("appointment_time")
+        .select("appointment_time, appointment_duration")
         .eq("appointment_date", effectiveDateStr);
-      if (!error && data) {
-        setBookedSlots(data.map((a) => a.appointment_time));
-      } else {
-        setBookedSlots([]);
-      }
+      if (!error && data) setBookedAppointments(data);
+      else setBookedAppointments([]);
     }
-    fetchBookedSlots();
+    fetchBooked();
   }, [effectiveDateStr]);
 
-  // ── Existing logic (untouched) ─────────────────────────────────────────────
+  // ── Derived occupied slots set ────────────────────────────────────────────
+  const occupiedSlots = buildOccupiedSet(bookedAppointments);
 
+  // ── Today past-time filter ────────────────────────────────────────────────
+  const isToday =
+    appointmentType === "today" ||
+    (appointmentType === "future" && selectedDate === todayStr);
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // ── Compute validity of each slot for the chosen duration ────────────────
+  // A slot is a valid START slot if:
+  //   1. Not in past (if today)
+  //   2. getOccupiedSlots returns non-null (doesn't cross a break)
+  //   3. None of the occupied run is in occupiedSlots
+
+  function isSlotValidStart(slotStr) {
+    if (isToday && timeToMinutes(slotStr) <= currentMinutes) return false;
+    const run = getOccupiedSlots(slotStr, appointmentDuration);
+    if (!run) return false; // crosses break or invalid
+    for (const s of run) {
+      if (occupiedSlots.has(s)) return false;
+    }
+    return true;
+  }
+
+  // Check if a slot is occupied (for greying it out regardless of duration logic)
+  function isSlotOccupied(slotStr) {
+    return occupiedSlots.has(slotStr);
+  }
+
+  function isSlotPast(slotStr) {
+    return isToday && timeToMinutes(slotStr) <= currentMinutes;
+  }
+
+  // Has any valid start slot at all?
+  const hasAvailableSlots = ALL_SLOTS.some(s => isSlotValidStart(s));
+
+  // ── Save appointment ──────────────────────────────────────────────────────
   const saveAppointment = async () => {
     const bookingDate =
       appointmentType === "today"
-        ? new Date().toISOString().split("T")[0]
+        ? todayStr
         : selectedDate;
 
-    // Feature 3: insert location field
     const { error } = await supabase
       .from("appointments")
       .insert({
@@ -697,6 +475,7 @@ export default function CitizenBooking() {
         purpose: selectedPurpose,
         appointment_date: bookingDate,
         appointment_time: selectedSlot,
+        appointment_duration: appointmentDuration,
         officer_name: OFFICER.name,
         location: arrivingFrom,
         status: "Waiting",
@@ -708,55 +487,35 @@ export default function CitizenBooking() {
       return;
     }
 
-    // Feature 4: calculate dynamic queue position for this date
+    // Queue position
     const { data: dayAppointments } = await supabase
       .from("appointments")
       .select("appointment_time")
       .eq("appointment_date", bookingDate);
 
     if (dayAppointments) {
-      // Sort all booked slots by time using the master TIME_SLOTS order
-      const orderedTimes = TIME_SLOTS
-        .filter((s) => !s.disabled)
-        .map((s) => s.time);
-      const sortedBooked = dayAppointments
-        .map((a) => a.appointment_time)
-        .sort((a, b) => orderedTimes.indexOf(a) - orderedTimes.indexOf(b));
-      const pos = sortedBooked.indexOf(selectedSlot) + 1;
+      const sorted = dayAppointments
+        .map(a => a.appointment_time)
+        .sort((a, b) => ALL_SLOTS.indexOf(a) - ALL_SLOTS.indexOf(b));
+      const pos = sorted.indexOf(selectedSlot) + 1;
       setQueuePosition(pos > 0 ? pos : dayAppointments.length);
     }
 
-    setStep(6);
+    setStep(7);
   };
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
 
-  const isToday =
-    appointmentType === "today" ||
-    (appointmentType === "future" && selectedDate === todayStr);
-
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-  const visibleSlots = TIME_SLOTS.filter((s) => {
-    if (s.disabled) return true;
-    // 3. Past time filtering (existing)
-    if (isToday) {
-      return timeToMinutes(s.time) > currentMinutes;
-    }
-    return true;
-  });
-
-  // A slot is truly available only if it is visible AND not already booked
-  const hasAvailableSlots = visibleSlots.some(
-    (s) => !s.disabled && !bookedSlots.includes(s.time)
-  );
-
   function handlePurposeContinue() {
     if (!selectedPurpose.trim()) return;
-    appointmentType === "future" ? setStep(3) : setStep(4);
+    setStep(3); // → duration
+  }
+
+  function handleDurationContinue() {
+    // after duration: go to date (if future) or slot (if today)
+    appointmentType === "future" ? setStep(4) : setStep(5);
   }
 
   const displayDate =
@@ -770,6 +529,7 @@ export default function CitizenBooking() {
     setStep(0);
     setAppointmentType("");
     setSelectedPurpose("");
+    setAppointmentDuration(5);
     setSelectedDate("");
     setSelectedSlot("");
     setName("");
@@ -778,26 +538,24 @@ export default function CitizenBooking() {
     setNotes("");
     setFeedbackText("");
     setFeedbackSubmitted(false);
-    setBookedSlots([]);
+    setBookedAppointments([]);
     setQueuePosition(null);
     setAnnouncements([]);
     setUpcomingEvents([]);
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC" }}>
       <Header language={language} setLanguage={setLanguage} />
-
       <ProgressBar step={step} t={t} />
 
       {/* ── STEP 0: Landing ── */}
       {step === 0 && (
         <div style={landing.outer}>
           <div style={landing.hero}>
-            {/* Both real logos in hero */}
             <DualLogoRow />
-
             <p style={landing.gov}>{t.government}</p>
             <h1 style={landing.org}>{t.welcome}</h1>
             <p style={landing.taglineStyle}>{t.tagline}</p>
@@ -807,13 +565,13 @@ export default function CitizenBooking() {
             </button>
           </div>
 
-          {/* Office Timings */}
+          {/* Updated Office Timings */}
           <div style={landing.timingsCard}>
             <p style={landing.timingsHeading}>🕐 {t.officeTimings}</p>
             <div style={landing.timingsGrid}>
               <div style={landing.timingRow}>
                 <span style={landing.timingDot("green")} />
-                <span>11:00 AM – 1:30 PM</span>
+                <span>12:00 PM – 1:30 PM</span>
               </div>
               <div style={landing.timingRow}>
                 <span style={landing.timingDot("amber")} />
@@ -826,7 +584,6 @@ export default function CitizenBooking() {
             </div>
           </div>
 
-          {/* Officer card */}
           <Card style={{ maxWidth: 640 }}>
             <p style={{ margin: "0 0 14px", fontWeight: 700, fontSize: 13, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {t.appointmentsWith}
@@ -851,14 +608,9 @@ export default function CitizenBooking() {
                 onClick={() => { setAppointmentType(opt.key); setStep(2); }}
                 style={{
                   border: `2px solid ${appointmentType === opt.key ? "#2563EB" : "#E5E7EB"}`,
-                  borderRadius: 16,
-                  padding: "20px 22px",
-                  cursor: "pointer",
+                  borderRadius: 16, padding: "20px 22px", cursor: "pointer",
                   background: appointmentType === opt.key ? "#EFF6FF" : "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 16,
-                  transition: "all 0.15s",
+                  display: "flex", alignItems: "center", gap: 16, transition: "all 0.15s",
                 }}
               >
                 <span style={{ fontSize: 28 }}>{opt.icon}</span>
@@ -866,20 +618,12 @@ export default function CitizenBooking() {
                   <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#111827" }}>{opt.label}</p>
                   <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>{opt.desc}</p>
                 </div>
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    border: `2px solid ${appointmentType === opt.key ? "#2563EB" : "#D1D5DB"}`,
-                    background: appointmentType === opt.key ? "#2563EB" : "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
+                <span style={{
+                  marginLeft: "auto", width: 22, height: 22, borderRadius: "50%",
+                  border: `2px solid ${appointmentType === opt.key ? "#2563EB" : "#D1D5DB"}`,
+                  background: appointmentType === opt.key ? "#2563EB" : "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
                   {appointmentType === opt.key && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
                 </span>
               </div>
@@ -895,19 +639,10 @@ export default function CitizenBooking() {
           <OfficerBadge t={t} />
           <textarea
             style={{
-              width: "100%",
-              padding: "14px 16px",
-              borderRadius: 12,
-              border: "1.5px solid #D1D5DB",
-              fontSize: 15,
-              color: "#111827",
-              resize: "vertical",
-              minHeight: 130,
-              fontFamily: "inherit",
-              outline: "none",
-              boxSizing: "border-box",
-              lineHeight: 1.6,
-              transition: "border-color 0.15s",
+              width: "100%", padding: "14px 16px", borderRadius: 12,
+              border: "1.5px solid #D1D5DB", fontSize: 15, color: "#111827",
+              resize: "vertical", minHeight: 130, fontFamily: "inherit",
+              outline: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s",
             }}
             placeholder={t.purposePlaceholder}
             value={selectedPurpose}
@@ -921,8 +656,62 @@ export default function CitizenBooking() {
         </Card>
       )}
 
-      {/* ── STEP 3: Date (Future only) ── */}
+      {/* ── STEP 3: Duration (NEW) ── */}
       {step === 3 && (
+        <Card>
+          <StepHeading>How much meeting time do you require?</StepHeading>
+          <OfficerBadge t={t} />
+
+          <p style={{ margin: "0 0 18px", fontSize: 13, color: "#6B7280", fontWeight: 500, lineHeight: 1.6 }}>
+            Select how long you need with the Managing Director. Each slot is 5 minutes.
+          </p>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
+            {DURATION_OPTIONS.map((dur) => {
+              const isSelected = appointmentDuration === dur;
+              return (
+                <button
+                  key={dur}
+                  onClick={() => { setAppointmentDuration(dur); setSelectedSlot(""); }}
+                  style={{
+                    padding: "14px 24px",
+                    borderRadius: 12,
+                    border: `2px solid ${isSelected ? "#2563EB" : "#E5E7EB"}`,
+                    background: isSelected ? "linear-gradient(135deg,#2563EB,#1E3A8A)" : "#F9FAFB",
+                    color: isSelected ? "#fff" : "#374151",
+                    fontWeight: isSelected ? 700 : 500,
+                    fontSize: 15,
+                    cursor: "pointer",
+                    transform: isSelected ? "scale(1.05)" : "scale(1)",
+                    transition: "all 0.15s",
+                    boxShadow: isSelected ? "0 4px 14px rgba(37,99,235,0.3)" : "none",
+                  }}
+                >
+                  {dur} Minutes
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{
+            background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 12,
+            padding: "14px 18px", marginTop: 16, display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 20 }}>⏱</span>
+            <p style={{ margin: 0, fontSize: 13, color: "#0369A1", fontWeight: 600 }}>
+              You selected <strong>{appointmentDuration} minute{appointmentDuration > 5 ? "s" : ""}</strong>.
+              {appointmentDuration > 5 && ` This will reserve ${appointmentDuration / 5} consecutive 5-minute slots.`}
+            </p>
+          </div>
+
+          <PrimaryButton onClick={handleDurationContinue}>
+            {t.continue}
+          </PrimaryButton>
+        </Card>
+      )}
+
+      {/* ── STEP 4: Date (Future only) ── */}
+      {step === 4 && (
         <Card>
           <StepHeading>{t.selectDate}</StepHeading>
           <OfficerBadge t={t} />
@@ -933,177 +722,190 @@ export default function CitizenBooking() {
             type="date"
             min={todayStr}
             style={{
-              width: "100%",
-              padding: "13px 16px",
-              borderRadius: 12,
-              border: "1.5px solid #D1D5DB",
-              fontSize: 16,
-              color: "#111827",
-              outline: "none",
-              boxSizing: "border-box",
-              fontFamily: "inherit",
+              width: "100%", padding: "13px 16px", borderRadius: 12,
+              border: "1.5px solid #D1D5DB", fontSize: 16, color: "#111827",
+              outline: "none", boxSizing: "border-box", fontFamily: "inherit",
             }}
             value={selectedDate}
-            onChange={(e) => {
-              setSelectedDate(e.target.value);
-              // Clear any previously selected slot when date changes
-              setSelectedSlot("");
-            }}
+            onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(""); }}
           />
-
-          {/* ── Holiday / Weekend closed message for Step 3 ── */}
           {selectedDate && officeStatus.closed && (
             <div style={{ marginTop: 16 }}>
-              <OfficeClosedCard
-                reason={officeStatus.reason}
-                dateStr={effectiveDateStr}
-              />
+              <OfficeClosedCard reason={officeStatus.reason} dateStr={effectiveDateStr} />
             </div>
           )}
-
-          <PrimaryButton
-            onClick={() => setStep(4)}
-            disabled={!selectedDate || officeStatus.closed}
-          >
+          <PrimaryButton onClick={() => setStep(5)} disabled={!selectedDate || officeStatus.closed}>
             {t.continue}
           </PrimaryButton>
         </Card>
       )}
 
-      {/* ── STEP 4: Time Slot ── */}
-      {step === 4 && (
+      {/* ── STEP 5: Time Slot ── */}
+      {step === 5 && (
         <Card>
           <StepHeading>{t.selectSlot}</StepHeading>
           <OfficerBadge t={t} />
 
-          {/* ── Holiday / Weekend closed message for Step 4 ── */}
+          {/* Duration reminder pill */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            background: "#EFF6FF", border: "1px solid #BFDBFE",
+            borderRadius: 99, padding: "6px 14px", marginBottom: 20,
+          }}>
+            <span style={{ fontSize: 13 }}>⏱</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#2563EB" }}>
+              {appointmentDuration} min appointment
+            </span>
+          </div>
+
           {officeStatus.closed ? (
-            <OfficeClosedCard
-              reason={officeStatus.reason}
-              dateStr={effectiveDateStr}
-            />
+            <OfficeClosedCard reason={officeStatus.reason} dateStr={effectiveDateStr} />
+          ) : !hasAvailableSlots ? (
+            <div style={{
+              background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12,
+              padding: "16px 20px", marginBottom: 16, textAlign: "center",
+              color: "#DC2626", fontWeight: 600, fontSize: 14,
+            }}>
+              ⚠️ No available slots for the selected duration today. Please try a shorter duration or a future date.
+            </div>
           ) : (
             <>
-              {!hasAvailableSlots && (
-                <div
-                  style={{
-                    background: "#FEF2F2",
-                    border: "1.5px solid #FECACA",
-                    borderRadius: 12,
-                    padding: "16px 20px",
-                    marginBottom: 16,
-                    textAlign: "center",
-                    color: "#DC2626",
-                    fontWeight: 600,
-                    fontSize: 14,
-                  }}
-                >
-                  ⚠️ No more slots available for today. Please book for a future date.
-                </div>
-              )}
+              {/* Morning Section */}
+              {(() => {
+                const morningGroups = SLOT_GROUPS.filter(g => g.section === "morning");
+                const morningSlots = morningGroups.flatMap(g => g.slots);
+                const visibleMorning = morningSlots.filter(s => !isSlotPast(s));
+                if (visibleMorning.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <p style={{
+                      margin: "0 0 10px", fontSize: 11, fontWeight: 700, color: "#6B7280",
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                    }}>☀️ Morning Session — 12:00 PM to 1:30 PM</p>
+                    {morningGroups.map((group, gi) => {
+                      const visible = group.slots.filter(s => !isSlotPast(s));
+                      if (visible.length === 0) return null;
+                      return (
+                        <div key={gi} style={{ marginBottom: 12 }}>
+                          <SlotRow
+                            slots={visible}
+                            selectedSlot={selectedSlot}
+                            setSelectedSlot={setSelectedSlot}
+                            isSlotValidStart={isSlotValidStart}
+                            isSlotOccupied={isSlotOccupied}
+                            isSlotPast={isSlotPast}
+                          />
+                          {/* Show pomodoro break divider between groups, not after last */}
+                          {gi < morningGroups.length - 1 && morningGroups[gi+1].slots.some(s => !isSlotPast(s)) && (
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 10, margin: "8px 0",
+                            }}>
+                              <div style={{ flex: 1, height: 1, background: "#F3F4F6" }} />
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: "#D97706",
+                                background: "#FEF3C7", padding: "3px 10px", borderRadius: 99,
+                                border: "1px solid #FDE68A",
+                              }}>☕ 5-min break</span>
+                              <div style={{ flex: 1, height: 1, background: "#F3F4F6" }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                {visibleSlots.map((s, i) => {
-                  if (s.disabled) {
-                    const hasAfternoonSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "afternoon");
-                    const hasMorningSlots = visibleSlots.some((vs) => !vs.disabled && vs.group === "morning");
-                    if (!hasMorningSlots || !hasAfternoonSlots) return null;
-                    return (
-                      <div
-                        key={i}
-                        style={{
-                          gridColumn: "1 / -1",
-                          background: "#FEF3C7",
-                          color: "#92400E",
-                          borderRadius: 10,
-                          padding: "10px",
-                          textAlign: "center",
-                          fontSize: 13,
-                          fontWeight: 700,
-                          letterSpacing: "0.05em",
-                        }}
-                      >
-                        🍽 {t.lunchBreak}
-                      </div>
-                    );
-                  }
-                  const isSelected = selectedSlot === s.time;
-                  // Feature 1 & 2: check if slot is already booked
-                  const isBooked = bookedSlots.includes(s.time);
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => !isBooked && setSelectedSlot(s.time)}
-                      disabled={isBooked}
-                      style={{
-                        padding: "12px 4px",
-                        borderRadius: 10,
-                        border: `2px solid ${
-                          isBooked
-                            ? "#E5E7EB"
-                            : isSelected
-                            ? "#2563EB"
-                            : "#E5E7EB"
-                        }`,
-                        background: isBooked
-                          ? "#F3F4F6"
-                          : isSelected
-                          ? "linear-gradient(135deg,#2563EB,#1E3A8A)"
-                          : "#F9FAFB",
-                        color: isBooked
-                          ? "#9CA3AF"
-                          : isSelected
-                          ? "#fff"
-                          : "#374151",
-                        fontWeight: isSelected ? 700 : 500,
-                        fontSize: 13,
-                        cursor: isBooked ? "not-allowed" : "pointer",
-                        opacity: isBooked ? 0.5 : 1,
-                        transform: isSelected ? "scale(1.04)" : "scale(1)",
-                        transition: "all 0.15s",
-                        boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.3)" : "none",
-                      }}
-                    >
-                      {s.time}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Lunch Banner */}
+              {(() => {
+                const morningVisible = SLOT_GROUPS
+                  .filter(g => g.section === "morning")
+                  .flatMap(g => g.slots)
+                  .some(s => !isSlotPast(s));
+                const afternoonVisible = SLOT_GROUPS
+                  .filter(g => g.section === "afternoon")
+                  .flatMap(g => g.slots)
+                  .some(s => !isSlotPast(s));
+                if (!morningVisible || !afternoonVisible) return null;
+                return (
+                  <div style={{
+                    background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 12,
+                    padding: "12px 16px", textAlign: "center", marginBottom: 20,
+                    color: "#92400E", fontWeight: 700, fontSize: 13,
+                  }}>
+                    🍽 Lunch Break — 1:30 PM to 2:30 PM
+                  </div>
+                );
+              })()}
+
+              {/* Afternoon Section */}
+              {(() => {
+                const afternoonGroups = SLOT_GROUPS.filter(g => g.section === "afternoon");
+                const afternoonSlots = afternoonGroups.flatMap(g => g.slots);
+                const visibleAfternoon = afternoonSlots.filter(s => !isSlotPast(s));
+                if (visibleAfternoon.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 8 }}>
+                    <p style={{
+                      margin: "0 0 10px", fontSize: 11, fontWeight: 700, color: "#6B7280",
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                    }}>🌤 Afternoon Session — 2:30 PM to 5:00 PM</p>
+                    {afternoonGroups.map((group, gi) => {
+                      const visible = group.slots.filter(s => !isSlotPast(s));
+                      if (visible.length === 0) return null;
+                      return (
+                        <div key={gi} style={{ marginBottom: 12 }}>
+                          <SlotRow
+                            slots={visible}
+                            selectedSlot={selectedSlot}
+                            setSelectedSlot={setSelectedSlot}
+                            isSlotValidStart={isSlotValidStart}
+                            isSlotOccupied={isSlotOccupied}
+                            isSlotPast={isSlotPast}
+                          />
+                          {gi < afternoonGroups.length - 1 && afternoonGroups[gi+1].slots.some(s => !isSlotPast(s)) && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "8px 0" }}>
+                              <div style={{ flex: 1, height: 1, background: "#F3F4F6" }} />
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: "#D97706",
+                                background: "#FEF3C7", padding: "3px 10px", borderRadius: 99,
+                                border: "1px solid #FDE68A",
+                              }}>☕ 5-min break</span>
+                              <div style={{ flex: 1, height: 1, background: "#F3F4F6" }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </>
           )}
 
           <PrimaryButton
-            onClick={() => setStep(5)}
-            disabled={!selectedSlot || !hasAvailableSlots || officeStatus.closed}
+            onClick={() => setStep(6)}
+            disabled={!selectedSlot || officeStatus.closed}
           >
             {t.continue}
           </PrimaryButton>
         </Card>
       )}
 
-      {/* ── STEP 5: Personal Details ── */}
-      {step === 5 && (
+      {/* ── STEP 6: Personal Details ── */}
+      {step === 6 && (
         <Card>
           <StepHeading>{t.details}</StepHeading>
           <OfficerBadge t={t} />
 
-          {/* Name */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-              {t.fullName}
-            </label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>{t.fullName}</label>
             <input
               type="text"
               style={{
-                width: "100%",
-                padding: "13px 16px",
-                borderRadius: 12,
-                border: "1.5px solid #D1D5DB",
-                fontSize: 15,
-                color: "#111827",
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
+                width: "100%", padding: "13px 16px", borderRadius: 12,
+                border: "1.5px solid #D1D5DB", fontSize: 15, color: "#111827",
+                outline: "none", boxSizing: "border-box", fontFamily: "inherit",
               }}
               placeholder={t.fullNamePlaceholder}
               value={name}
@@ -1113,29 +915,20 @@ export default function CitizenBooking() {
             />
           </div>
 
-          {/* Mobile */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-              {t.mobile}
-            </label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>{t.mobile}</label>
             <input
               type="tel"
               inputMode="numeric"
               maxLength={10}
               style={{
-                width: "100%",
-                padding: "13px 16px",
-                borderRadius: 12,
+                width: "100%", padding: "13px 16px", borderRadius: 12,
                 border: `1.5px solid ${mobile.length > 0 && mobile.length < 10 ? "#F87171" : "#D1D5DB"}`,
-                fontSize: 15,
-                color: "#111827",
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
+                fontSize: 15, color: "#111827", outline: "none", boxSizing: "border-box", fontFamily: "inherit",
               }}
               placeholder={t.mobilePlaceholder}
               value={mobile}
-              onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              onChange={(e) => setMobile(e.target.value.replace(/\D/g,"").slice(0,10))}
               onFocus={(e) => (e.target.style.borderColor = "#2563EB")}
               onBlur={(e) => (e.target.style.borderColor = mobile.length > 0 && mobile.length < 10 ? "#F87171" : "#D1D5DB")}
             />
@@ -1146,23 +939,14 @@ export default function CitizenBooking() {
             )}
           </div>
 
-          {/* Arriving From */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-              Arriving From
-            </label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Arriving From</label>
             <input
               type="text"
               style={{
-                width: "100%",
-                padding: "13px 16px",
-                borderRadius: 12,
-                border: "1.5px solid #D1D5DB",
-                fontSize: 15,
-                color: "#111827",
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
+                width: "100%", padding: "13px 16px", borderRadius: 12,
+                border: "1.5px solid #D1D5DB", fontSize: 15, color: "#111827",
+                outline: "none", boxSizing: "border-box", fontFamily: "inherit",
               }}
               placeholder="Enter your city, village or area"
               value={arrivingFrom}
@@ -1172,7 +956,6 @@ export default function CitizenBooking() {
             />
           </div>
 
-          {/* Notes */}
           <div style={{ marginBottom: 4 }}>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
               {t.notes}{" "}
@@ -1180,17 +963,10 @@ export default function CitizenBooking() {
             </label>
             <textarea
               style={{
-                width: "100%",
-                padding: "13px 16px",
-                borderRadius: 12,
-                border: "1.5px solid #D1D5DB",
-                fontSize: 15,
-                color: "#111827",
-                resize: "vertical",
-                minHeight: 90,
-                fontFamily: "inherit",
-                outline: "none",
-                boxSizing: "border-box",
+                width: "100%", padding: "13px 16px", borderRadius: 12,
+                border: "1.5px solid #D1D5DB", fontSize: 15, color: "#111827",
+                resize: "vertical", minHeight: 90, fontFamily: "inherit",
+                outline: "none", boxSizing: "border-box",
               }}
               placeholder={t.notesPlaceholder}
               value={notes}
@@ -1206,8 +982,8 @@ export default function CitizenBooking() {
         </Card>
       )}
 
-      {/* ── STEP 6: Confirmation ── */}
-      {step === 6 && (
+      {/* ── STEP 7: Confirmation ── */}
+      {step === 7 && (
         <div style={{ maxWidth: 640, margin: "20px auto 40px", padding: "0 16px" }}>
           <div style={conf.banner}>
             <div style={conf.checkCircle}>✓</div>
@@ -1229,15 +1005,11 @@ export default function CitizenBooking() {
               <span style={conf.rowIcon}>👩‍💼</span>
               <div>
                 <p style={conf.rowLabel}>{t.meetingWith}</p>
-                <p style={conf.rowValue}>
-                  {OFFICER.name}
-                  <span style={{ marginLeft: 8, fontSize: 12, color: "#6B7280", fontWeight: 400 }}>
-                    {t.designationMD}
-                  </span>
+                <p style={conf.rowValue}>{OFFICER.name}
+                  <span style={{ marginLeft: 8, fontSize: 12, color: "#6B7280", fontWeight: 400 }}>{t.designationMD}</span>
                 </p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
@@ -1247,7 +1019,6 @@ export default function CitizenBooking() {
                 <p style={conf.rowValue}>{selectedPurpose}</p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
@@ -1257,17 +1028,15 @@ export default function CitizenBooking() {
                 <p style={conf.rowValue}>{displayDate}</p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
               <span style={conf.rowIcon}>🕐</span>
               <div>
                 <p style={conf.rowLabel}>{t.time}</p>
-                <p style={conf.rowValue}>{selectedSlot}</p>
+                <p style={conf.rowValue}>{selectedSlot} — {appointmentDuration} minutes</p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
@@ -1277,7 +1046,6 @@ export default function CitizenBooking() {
                 <p style={conf.rowValue}>#{queuePosition ?? "—"}</p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
@@ -1287,7 +1055,6 @@ export default function CitizenBooking() {
                 <p style={conf.rowValue}>{name}</p>
               </div>
             </div>
-
             <div style={conf.divider} />
 
             <div style={conf.row}>
@@ -1299,7 +1066,7 @@ export default function CitizenBooking() {
             </div>
 
             {arrivingFrom.trim() && (
-              <div>
+              <>
                 <div style={conf.divider} />
                 <div style={conf.row}>
                   <span style={conf.rowIcon}>📍</span>
@@ -1308,12 +1075,12 @@ export default function CitizenBooking() {
                     <p style={conf.rowValue}>{arrivingFrom}</p>
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
           <a
-            href={`https://wa.me/?text=My appointment at MSTDCL is confirmed. Token: ${appointmentId}. Time: ${selectedSlot} on ${displayDate}.`}
+            href={`https://wa.me/?text=My appointment at MSTDCL is confirmed. Token: ${appointmentId}. Time: ${selectedSlot} (${appointmentDuration} min) on ${displayDate}.`}
             target="_blank"
             rel="noopener noreferrer"
             style={conf.whatsapp}
@@ -1321,66 +1088,25 @@ export default function CitizenBooking() {
             <span style={{ fontSize: 20 }}>💬</span> {t.whatsappBtn}
           </a>
 
-          {/* ── SECTION 1: Latest Announcements ── */}
           <AnnouncementsSection announcements={announcements} />
-
-          {/* ── SECTION 2: Upcoming Events ── */}
           <EventsSection events={upcomingEvents} />
 
-          {/* Feedback Section */}
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 20,
-              padding: "22px",
-              marginTop: 16,
-              boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
-            }}
-          >
-            <p
-              style={{
-                margin: "0 0 14px",
-                fontWeight: 700,
-                fontSize: 13,
-                color: "#2563EB",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
+          {/* Feedback */}
+          <div style={{ background: "#fff", borderRadius: 20, padding: "22px", marginTop: 16, boxShadow: "0 4px 24px rgba(37,99,235,0.07)" }}>
+            <p style={{ margin: "0 0 14px", fontWeight: 700, fontSize: 13, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               💬 Citizen Feedback
             </p>
-
             {feedbackSubmitted ? (
-              <div
-                style={{
-                  background: "#ECFDF5",
-                  border: "1.5px solid #6EE7B7",
-                  borderRadius: 12,
-                  padding: "16px 20px",
-                  textAlign: "center",
-                  color: "#065F46",
-                  fontWeight: 700,
-                  fontSize: 15,
-                }}
-              >
+              <div style={{ background: "#ECFDF5", border: "1.5px solid #6EE7B7", borderRadius: 12, padding: "16px 20px", textAlign: "center", color: "#065F46", fontWeight: 700, fontSize: 15 }}>
                 ✅ Feedback Submitted. Thank you.
               </div>
             ) : (
               <div>
                 <textarea
                   style={{
-                    width: "100%",
-                    padding: "13px 16px",
-                    borderRadius: 12,
-                    border: "1.5px solid #D1D5DB",
-                    fontSize: 15,
-                    color: "#111827",
-                    resize: "vertical",
-                    minHeight: 90,
-                    fontFamily: "inherit",
-                    outline: "none",
-                    boxSizing: "border-box",
-                    lineHeight: 1.6,
+                    width: "100%", padding: "13px 16px", borderRadius: 12, border: "1.5px solid #D1D5DB",
+                    fontSize: 15, color: "#111827", resize: "vertical", minHeight: 90,
+                    fontFamily: "inherit", outline: "none", boxSizing: "border-box", lineHeight: 1.6,
                   }}
                   placeholder="Share your experience or suggestions"
                   value={feedbackText}
@@ -1392,15 +1118,9 @@ export default function CitizenBooking() {
                   onClick={() => { if (feedbackText.trim()) setFeedbackSubmitted(true); }}
                   disabled={!feedbackText.trim()}
                   style={{
-                    width: "100%",
-                    padding: "14px",
-                    marginTop: 12,
-                    borderRadius: 12,
-                    border: "none",
+                    width: "100%", padding: "14px", marginTop: 12, borderRadius: 12, border: "none",
                     background: !feedbackText.trim() ? "#93C5FD" : "linear-gradient(135deg,#2563EB,#1E3A8A)",
-                    color: "#fff",
-                    fontSize: 15,
-                    fontWeight: 700,
+                    color: "#fff", fontSize: 15, fontWeight: 700,
                     cursor: !feedbackText.trim() ? "not-allowed" : "pointer",
                     boxShadow: !feedbackText.trim() ? "none" : "0 4px 14px rgba(37,99,235,0.35)",
                     letterSpacing: "0.02em",
@@ -1414,16 +1134,9 @@ export default function CitizenBooking() {
 
           <button
             style={{
-              width: "100%",
-              padding: "14px",
-              borderRadius: 12,
-              border: "1.5px solid #D1D5DB",
-              background: "#fff",
-              color: "#374151",
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: "pointer",
-              marginTop: 12,
+              width: "100%", padding: "14px", borderRadius: 12, border: "1.5px solid #D1D5DB",
+              background: "#fff", color: "#374151", fontSize: 15, fontWeight: 600,
+              cursor: "pointer", marginTop: 12,
             }}
             onClick={resetAll}
           >
@@ -1446,94 +1159,126 @@ export default function CitizenBooking() {
   );
 }
 
-// ─── Landing Styles ────────────────────────────────────────────────────────────
+// ─── SlotRow sub-component ────────────────────────────────────────────────────
+
+function SlotRow({ slots, selectedSlot, setSelectedSlot, isSlotValidStart, isSlotOccupied, isSlotPast }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+      {slots.map((slotStr, i) => {
+        const isSelected = selectedSlot === slotStr;
+        const isValid = isSlotValidStart(slotStr);
+        const isOccupied = isSlotOccupied(slotStr);
+        const isPast = isSlotPast(slotStr);
+        const isDisabled = !isValid; // occupied, past, or crosses break
+
+        return (
+          <button
+            key={i}
+            onClick={() => isValid && setSelectedSlot(slotStr)}
+            disabled={isDisabled}
+            title={
+              isPast ? "Past time" :
+              isOccupied ? "Already booked" :
+              !isValid ? "Not available for selected duration" :
+              ""
+            }
+            style={{
+              padding: "10px 4px",
+              borderRadius: 10,
+              border: `2px solid ${
+                isSelected ? "#2563EB" :
+                isDisabled ? "#E5E7EB" :
+                "#E5E7EB"
+              }`,
+              background:
+                isSelected
+                  ? "linear-gradient(135deg,#2563EB,#1E3A8A)"
+                  : isOccupied
+                  ? "#FEE2E2"
+                  : isDisabled
+                  ? "#F3F4F6"
+                  : "#F9FAFB",
+              color:
+                isSelected ? "#fff" :
+                isOccupied ? "#9CA3AF" :
+                isDisabled ? "#9CA3AF" :
+                "#374151",
+              fontWeight: isSelected ? 700 : 500,
+              fontSize: 12,
+              cursor: isDisabled ? "not-allowed" : "pointer",
+              opacity: isDisabled && !isOccupied ? 0.45 : 1,
+              transform: isSelected ? "scale(1.06)" : "scale(1)",
+              transition: "all 0.15s",
+              boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.3)" : "none",
+              position: "relative",
+            }}
+          >
+            {slotStr.replace(" PM","").replace(" AM","")}
+            {isOccupied && (
+              <span style={{
+                display: "block", fontSize: 9, color: "#EF4444",
+                fontWeight: 700, marginTop: 2, letterSpacing: "0.02em",
+              }}>Booked</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Landing Styles ───────────────────────────────────────────────────────────
 
 const landing = {
   outer: { padding: "0 16px 40px" },
   hero: {
     background: "linear-gradient(145deg,#1E3A8A 0%,#2563EB 60%,#3B82F6 100%)",
-    borderRadius: 24,
-    padding: "48px 32px 52px",
-    textAlign: "center",
-    maxWidth: 640,
-    margin: "20px auto 0",
-    boxShadow: "0 8px 32px rgba(37,99,235,0.35)",
+    borderRadius: 24, padding: "48px 32px 52px", textAlign: "center",
+    maxWidth: 640, margin: "20px auto 0", boxShadow: "0 8px 32px rgba(37,99,235,0.35)",
   },
   gov: { margin: "0 0 6px", fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" },
   org: { margin: "0 0 12px", fontSize: 22, fontWeight: 800, color: "#fff", lineHeight: 1.3 },
   taglineStyle: { margin: "0 0 32px", fontSize: 14, color: "rgba(255,255,255,0.75)", letterSpacing: "0.04em" },
   cta: {
-    padding: "16px 36px",
-    fontSize: 16,
-    fontWeight: 700,
-    border: "none",
-    borderRadius: 12,
-    background: "#fff",
-    color: "#1E3A8A",
-    cursor: "pointer",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-    letterSpacing: "0.02em",
+    padding: "16px 36px", fontSize: 16, fontWeight: 700, border: "none", borderRadius: 12,
+    background: "#fff", color: "#1E3A8A", cursor: "pointer",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.2)", letterSpacing: "0.02em",
   },
   timingsCard: {
-    background: "#fff",
-    borderRadius: 18,
-    padding: "22px 24px",
-    maxWidth: 640,
-    margin: "16px auto 0",
-    boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
+    background: "#fff", borderRadius: 18, padding: "22px 24px",
+    maxWidth: 640, margin: "16px auto 0", boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
   },
   timingsHeading: { margin: "0 0 14px", fontWeight: 700, fontSize: 15, color: "#111827" },
   timingsGrid: { display: "flex", flexDirection: "column", gap: 10 },
   timingRow: { display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "#374151", fontWeight: 500 },
   timingDot: (color) => ({
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
+    width: 10, height: 10, borderRadius: "50%",
     background: color === "green" ? "#22C55E" : "#F59E0B",
     flexShrink: 0,
   }),
 };
 
-// ─── Confirmation Styles ───────────────────────────────────────────────────────
+// ─── Confirmation Styles ──────────────────────────────────────────────────────
 
 const conf = {
   banner: {
-    background: "linear-gradient(135deg,#059669,#10B981)",
-    borderRadius: 20,
-    padding: "24px",
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
+    background: "linear-gradient(135deg,#059669,#10B981)", borderRadius: 20,
+    padding: "24px", display: "flex", alignItems: "center", gap: 16,
     boxShadow: "0 6px 20px rgba(16,185,129,0.35)",
   },
   checkCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: "50%",
-    background: "rgba(255,255,255,0.25)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-    color: "#fff",
-    fontWeight: 700,
-    flexShrink: 0,
+    width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.25)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 22, color: "#fff", fontWeight: 700, flexShrink: 0,
   },
   tokenCard: {
-    textAlign: "center",
-    background: "#EFF6FF",
-    border: "2px dashed #BFDBFE",
-    borderRadius: 16,
-    padding: "22px 16px",
-    marginTop: 16,
+    textAlign: "center", background: "#EFF6FF", border: "2px dashed #BFDBFE",
+    borderRadius: 16, padding: "22px 16px", marginTop: 16,
   },
   tokenLabel: { margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: "#2563EB", letterSpacing: "0.12em", textTransform: "uppercase" },
   tokenValue: { margin: 0, fontSize: 36, fontWeight: 900, color: "#1E3A8A", letterSpacing: "0.08em" },
   detailsCard: {
-    background: "#fff",
-    borderRadius: 20,
-    padding: "22px",
-    marginTop: 16,
+    background: "#fff", borderRadius: 20, padding: "22px", marginTop: 16,
     boxShadow: "0 4px 24px rgba(37,99,235,0.07)",
   },
   sectionLabel: { margin: "0 0 16px", fontWeight: 700, fontSize: 13, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.08em" },
@@ -1543,18 +1288,10 @@ const conf = {
   rowValue: { margin: "2px 0 0", fontSize: 15, color: "#111827", fontWeight: 600 },
   divider: { height: 1, background: "#F3F4F6", margin: "12px 0" },
   whatsapp: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    marginTop: 16,
-    padding: "16px",
-    background: "linear-gradient(135deg,#16A34A,#22C55E)",
-    color: "#fff",
-    borderRadius: 12,
-    fontWeight: 700,
-    fontSize: 15,
-    textDecoration: "none",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+    marginTop: 16, padding: "16px",
+    background: "linear-gradient(135deg,#16A34A,#22C55E)", color: "#fff",
+    borderRadius: 12, fontWeight: 700, fontSize: 15, textDecoration: "none",
     boxShadow: "0 4px 14px rgba(34,197,94,0.35)",
   },
 };
