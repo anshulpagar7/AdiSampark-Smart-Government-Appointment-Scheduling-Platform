@@ -10,30 +10,13 @@ import tribalLogo from "../assets/tribal-logo.jpg";
 
 const OFFICER = { name: "Leena Bansod", designation: "Managing Director" };
 
-const TOTAL_STEPS = 6; // now 6 steps (duration added between purpose and date/slot)
+const TOTAL_STEPS = 6;
 
-const DURATION_OPTIONS = [5, 10, 15, 20, 25]; // minutes
+const DURATION_OPTIONS = [5, 10, 15, 20, 25];
 
 // ─── Slot Engine ──────────────────────────────────────────────────────────────
-//
-// Office hours:
-//   Morning   : 12:00 PM – 1:20 PM  (last slot starts 1:20, ends 1:25; lunch at 1:30)
-//   Afternoon : 2:30 PM  – 4:50 PM  (last slot starts 4:50, ends 4:55; office closes 5:00)
-//
-// Pomodoro rhythm: 5 work slots (25 min) then a 5-min break (slot not shown).
-//
-// Resulting groups (each exactly 5 bookable slots):
-//   A: 12:00 12:05 12:10 12:15 12:20  [break 12:25]
-//   B: 12:30 12:35 12:40 12:45 12:50  [break 12:55]
-//   C:  1:00  1:05  1:10  1:15  1:20  [lunch  1:30–2:30]
-//   D:  2:30  2:35  2:40  2:45  2:50  [break  2:55]
-//   E:  3:00  3:05  3:10  3:15  3:20  [break  3:25]
-//   F:  3:30  3:35  3:40  3:45  3:50  [break  3:55]
-//   G:  4:00  4:05  4:10  4:15  4:20  [break  4:25]
-//   H:  4:30  4:35  4:40  4:45  4:50  [office closes 5:00]
 
 const SLOT_GROUPS = [
-  // label shown as section header, slots array
   { label: "Morning Session", section: "morning", slots: ["12:00 PM","12:05 PM","12:10 PM","12:15 PM","12:20 PM"] },
   { label: "Morning Session", section: "morning", slots: ["12:30 PM","12:35 PM","12:40 PM","12:45 PM","12:50 PM"] },
   { label: "Morning Session", section: "morning", slots: ["01:00 PM","01:05 PM","01:10 PM","01:15 PM","01:20 PM"] },
@@ -44,17 +27,13 @@ const SLOT_GROUPS = [
   { label: "Afternoon Session", section: "afternoon", slots: ["04:30 PM","04:35 PM","04:40 PM","04:45 PM","04:50 PM"] },
 ];
 
-// Flat ordered list of all bookable slot strings
 const ALL_SLOTS = SLOT_GROUPS.flatMap(g => g.slots);
 
-// Convert a slot string like "12:05 PM" to minutes-since-midnight
 function slotToMinutes(slotStr) {
   const d = new Date(`1970-01-01 ${slotStr}`);
   return d.getHours() * 60 + d.getMinutes();
 }
 
-// Given a starting slot and duration (minutes), return array of all slot strings it occupies.
-// Returns null if the run is invalid (crosses a break or leaves valid slots).
 function getOccupiedSlots(startSlot, durationMinutes) {
   const slotsNeeded = durationMinutes / 5;
   const startIdx = ALL_SLOTS.indexOf(startSlot);
@@ -63,23 +42,20 @@ function getOccupiedSlots(startSlot, durationMinutes) {
   const occupied = [];
   for (let i = 0; i < slotsNeeded; i++) {
     const slotIdx = startIdx + i;
-    if (slotIdx >= ALL_SLOTS.length) return null; // ran off end
+    if (slotIdx >= ALL_SLOTS.length) return null;
     occupied.push(ALL_SLOTS[slotIdx]);
   }
 
-  // Validate: all occupied slots must be in the SAME group
   const groupForSlot = (slot) => SLOT_GROUPS.findIndex(g => g.slots.includes(slot));
   const firstGroup = groupForSlot(occupied[0]);
   if (firstGroup === -1) return null;
   for (const s of occupied) {
-    if (groupForSlot(s) !== firstGroup) return null; // crosses a break
+    if (groupForSlot(s) !== firstGroup) return null;
   }
 
   return occupied;
 }
 
-// Expand booked appointments (each has appointment_time + appointment_duration)
-// into a Set of all occupied slot strings.
 function buildOccupiedSet(bookedAppointments) {
   const occupied = new Set();
   for (const appt of bookedAppointments) {
@@ -89,8 +65,6 @@ function buildOccupiedSet(bookedAppointments) {
   }
   return occupied;
 }
-
-// ─── Feature 4: Time filtering helper ────────────────────────────────────────
 
 function timeToMinutes(slotStr) {
   return slotToMinutes(slotStr);
@@ -113,6 +87,80 @@ function OfficeClosedCard({ reason, dateStr }) {
       {reason && <p style={{ margin: 0, fontWeight: 600, fontSize: 15, color: "#991B1B" }}>{reason}</p>}
       {displayDate && <p style={{ margin: 0, fontSize: 13, color: "#B91C1C" }}>{displayDate}</p>}
       <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6B7280", fontWeight: 500 }}>Please select another date.</p>
+    </div>
+  );
+}
+
+// ─── NEW: Madam On Tour Card ──────────────────────────────────────────────────
+
+function MadamOnTourCard({ tour }) {
+  // "Available Again" = end_date + 1 day
+  const availableAgain = tour.end_date
+    ? (() => {
+        const d = new Date(tour.end_date + "T00:00:00");
+        d.setDate(d.getDate() + 1);
+        return d.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+      })()
+    : null;
+
+  return (
+    <div style={{
+      background: "#FFFBEB",
+      border: "1.5px solid #FCD34D",
+      borderRadius: 14,
+      padding: "20px 22px",
+      marginBottom: 16,
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
+    }}>
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 26 }}>✈️</span>
+        <div>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: "#92400E" }}>
+            Madam is on Official Tour
+          </p>
+        </div>
+      </div>
+
+      {/* Body */}
+      <p style={{ margin: 0, fontSize: 13, color: "#78350F", lineHeight: 1.6, fontWeight: 500 }}>
+        Madam will be on an official tour on the selected date.
+        Appointments are temporarily unavailable during this period.
+        Please choose another available date.
+      </p>
+
+      {/* Details */}
+      <div style={{
+        background: "#FEF3C7",
+        border: "1px solid #FDE68A",
+        borderRadius: 10,
+        padding: "12px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        marginTop: 4,
+      }}>
+        {tour.destination && (
+          <div style={{ display: "flex", gap: 8, fontSize: 13, color: "#92400E" }}>
+            <span style={{ fontWeight: 700, minWidth: 90 }}>📍 Destination:</span>
+            <span style={{ fontWeight: 500 }}>{tour.destination}</span>
+          </div>
+        )}
+        {tour.purpose && (
+          <div style={{ display: "flex", gap: 8, fontSize: 13, color: "#92400E" }}>
+            <span style={{ fontWeight: 700, minWidth: 90 }}>📋 Purpose:</span>
+            <span style={{ fontWeight: 500 }}>{tour.purpose}</span>
+          </div>
+        )}
+        {availableAgain && (
+          <div style={{ display: "flex", gap: 8, fontSize: 13, color: "#92400E" }}>
+            <span style={{ fontWeight: 700, minWidth: 90 }}>✅ Available:</span>
+            <span style={{ fontWeight: 600 }}>{availableAgain}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -313,7 +361,7 @@ export default function CitizenBooking() {
 
   const [appointmentType, setAppointmentType] = useState("");
   const [selectedPurpose, setSelectedPurpose] = useState("");
-  const [appointmentDuration, setAppointmentDuration] = useState(5); // NEW
+  const [appointmentDuration, setAppointmentDuration] = useState(5);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [name, setName] = useState("");
@@ -326,11 +374,11 @@ export default function CitizenBooking() {
 
   const [holidays, setHolidays] = useState([]);
 
-  // Booked appointments with duration info
+  // ── NEW: Tour diary entries ───────────────────────────────────────────────
+  const [tourDiary, setTourDiary] = useState([]);
+
   const [bookedAppointments, setBookedAppointments] = useState([]);
-
   const [queuePosition, setQueuePosition] = useState(null);
-
   const [announcements, setAnnouncements] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
 
@@ -349,7 +397,30 @@ export default function CitizenBooking() {
     fetchHolidays();
   }, []);
 
-  // ── Realtime: slot availability and holidays refresh instantly ────────────
+  // ── NEW: Fetch tour diary ─────────────────────────────────────────────────
+  useEffect(() => {
+    async function fetchTourDiary() {
+      const { data, error } = await supabase
+        .from("tour_diary")
+        .select("id, start_date, end_date, destination, purpose, status")
+        .neq("status", "Cancelled"); // cancelled tours don't block bookings
+      if (!error && data) setTourDiary(data);
+    }
+    fetchTourDiary();
+  }, []);
+
+  // ── Today string (local) ──────────────────────────────────────────────────
+  const today = new Date();
+  const todayStr =
+    today.getFullYear() + "-" +
+    String(today.getMonth() + 1).padStart(2, "0") + "-" +
+    String(today.getDate()).padStart(2, "0");
+
+  const effectiveDateStr =
+    appointmentType === "today" ? todayStr :
+    appointmentType === "future" ? selectedDate : "";
+
+  // ── Realtime: refresh appointments, holidays, and tour_diary instantly ────
   useRealtime({
     appointments: () => {
       if (!effectiveDateStr) return;
@@ -367,11 +438,19 @@ export default function CitizenBooking() {
         .select("id, holiday_name, holiday_date, holiday_type, category")
         .then(({ data, error }) => { if (!error && data) setHolidays(data); });
     },
+    // ── NEW: realtime for tour_diary ──────────────────────────────────────
+    tour_diary: () => {
+      supabase
+        .from("tour_diary")
+        .select("id, start_date, end_date, destination, purpose, status")
+        .neq("status", "Cancelled")
+        .then(({ data, error }) => { if (!error && data) setTourDiary(data); });
+    },
   });
 
   // ── Fetch announcements & events on confirmation ──────────────────────────
   useEffect(() => {
-    if (step !== 7) return; // step 7 is confirmation (0-indexed: 0 landing, 1-6 steps, 7 confirm)
+    if (step !== 7) return;
     async function fetchPostBookingInfo() {
       const { data: announcementData, error: announcementError } = await supabase
         .from("announcements")
@@ -397,7 +476,7 @@ export default function CitizenBooking() {
   function isWeekend(dateStr) {
     if (!dateStr) return false;
     const parts = dateStr.split("-");
-    const d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const day = d.getDay();
     return day === 0 || day === 6;
   }
@@ -408,24 +487,32 @@ export default function CitizenBooking() {
     if (holiday) return { closed: true, reason: holiday.holiday_name };
     if (isWeekend(dateStr)) {
       const parts = dateStr.split("-");
-      const d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
       return { closed: true, reason: d.getDay() === 0 ? "Sunday" : "Saturday" };
     }
     return { closed: false, reason: null };
   }
 
-  // ── Today string (local) ──────────────────────────────────────────────────
-  const today = new Date();
-  const todayStr =
-    today.getFullYear() + "-" +
-    String(today.getMonth()+1).padStart(2,"0") + "-" +
-    String(today.getDate()).padStart(2,"0");
-
-  const effectiveDateStr =
-    appointmentType === "today" ? todayStr :
-    appointmentType === "future" ? selectedDate : "";
+  // ── NEW: Tour diary check ─────────────────────────────────────────────────
+  // Returns the matching tour entry if Madam is on tour on the given date,
+  // otherwise returns null.
+  function getActiveTour(dateStr) {
+    if (!dateStr) return null;
+    return tourDiary.find(tour => {
+      if (!tour.start_date) return false;
+      const end = tour.end_date || tour.start_date;
+      return dateStr >= tour.start_date && dateStr <= end;
+    }) || null;
+  }
 
   const officeStatus = getOfficeStatus(effectiveDateStr);
+
+  // ── NEW: Active tour for the selected date ────────────────────────────────
+  // Priority: holiday check first, then tour check (matching the spec order)
+  const activeTour = officeStatus.closed ? null : getActiveTour(effectiveDateStr);
+
+  // True when the date is blocked for any reason
+  const isDateBlocked = officeStatus.closed || activeTour !== null;
 
   // ── Fetch booked appointments for the effective date ──────────────────────
   useEffect(() => {
@@ -452,32 +539,13 @@ export default function CitizenBooking() {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // ── Compute validity of each slot for the chosen duration ────────────────
-  // A slot is a valid START slot if:
-  //   1. Not in past (if today)
-  //   2. getOccupiedSlots returns non-null (doesn't cross a break/lunch/close)
-  //   3. None of the occupied run is already booked in Supabase
-  //
-  // Note: slots near the END of a Pomodoro group will be invalid for longer
-  // durations because the run would cross into the break gap.
-  // e.g. 12:45 is invalid as a 15-min start because 12:45+12:50+12:55 crosses the break.
-  // This is CORRECT — those slots are truly unavailable for that duration.
-  // We track the reason separately so the UI can explain it clearly.
-
   function getSlotStatus(slotStr) {
-    if (isToday && timeToMinutes(slotStr) <= currentMinutes) {
-      return "past";
-    }
-    if (occupiedSlots.has(slotStr)) {
-      return "booked";
-    }
+    if (isToday && timeToMinutes(slotStr) <= currentMinutes) return "past";
+    if (occupiedSlots.has(slotStr)) return "booked";
     const run = getOccupiedSlots(slotStr, appointmentDuration);
-    if (!run) {
-      // Crosses a break — not enough room in this group for chosen duration
-      return "too-short";
-    }
+    if (!run) return "too-short";
     for (const s of run) {
-      if (occupiedSlots.has(s)) return "run-blocked"; // a slot in the run is booked
+      if (occupiedSlots.has(s)) return "run-blocked";
     }
     return "available";
   }
@@ -490,43 +558,37 @@ export default function CitizenBooking() {
     return isToday && timeToMinutes(slotStr) <= currentMinutes;
   }
 
-  // Has any valid start slot at all?
   const hasAvailableSlots = ALL_SLOTS.some(s => isSlotValidStart(s));
 
-  // The full run of slots that are auto-selected based on chosen start + duration
   const selectedRun = selectedSlot
     ? (getOccupiedSlots(selectedSlot, appointmentDuration) ?? [])
     : [];
 
   // ── Save appointment ──────────────────────────────────────────────────────
   const saveAppointment = async () => {
-    const bookingDate =
-      appointmentType === "today"
-        ? todayStr
-        : selectedDate;
+    const bookingDate = appointmentType === "today" ? todayStr : selectedDate;
 
     const { error } = await supabase
       .from("appointments")
       .insert({
-        appointment_id: appointmentId,
-        citizen_name: name,
-        mobile: mobile,
-        purpose: selectedPurpose,
-        appointment_date: bookingDate,
-        appointment_time: selectedSlot,
+        appointment_id:       appointmentId,
+        citizen_name:         name,
+        mobile:               mobile,
+        purpose:              selectedPurpose,
+        appointment_date:     bookingDate,
+        appointment_time:     selectedSlot,
         appointment_duration: appointmentDuration,
-        officer_name: OFFICER.name,
-        location: arrivingFrom,
-        status: "Waiting",
+        officer_name:         OFFICER.name,
+        location:             arrivingFrom,
+        status:               "Waiting",
       });
 
     if (error) {
-      console.log(error);
+      console.error(error);
       alert("Failed to book appointment");
       return;
     }
 
-    // Queue position
     const { data: dayAppointments } = await supabase
       .from("appointments")
       .select("appointment_time")
@@ -549,11 +611,10 @@ export default function CitizenBooking() {
 
   function handlePurposeContinue() {
     if (!selectedPurpose.trim()) return;
-    setStep(3); // → duration
+    setStep(3);
   }
 
   function handleDurationContinue() {
-    // after duration: go to date (if future) or slot (if today)
     appointmentType === "future" ? setStep(4) : setStep(5);
   }
 
@@ -583,7 +644,7 @@ export default function CitizenBooking() {
     setUpcomingEvents([]);
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC" }}>
@@ -604,7 +665,6 @@ export default function CitizenBooking() {
             </button>
           </div>
 
-          {/* Updated Office Timings */}
           <div style={landing.timingsCard}>
             <p style={landing.timingsHeading}>🕐 {t.officeTimings}</p>
             <div style={landing.timingsGrid}>
@@ -695,7 +755,7 @@ export default function CitizenBooking() {
         </Card>
       )}
 
-      {/* ── STEP 3: Duration (NEW) ── */}
+      {/* ── STEP 3: Duration ── */}
       {step === 3 && (
         <Card>
           <StepHeading>How much meeting time do you require?</StepHeading>
@@ -713,16 +773,12 @@ export default function CitizenBooking() {
                   key={dur}
                   onClick={() => { setAppointmentDuration(dur); setSelectedSlot(""); }}
                   style={{
-                    padding: "14px 24px",
-                    borderRadius: 12,
+                    padding: "14px 24px", borderRadius: 12,
                     border: `2px solid ${isSelected ? "#2563EB" : "#E5E7EB"}`,
                     background: isSelected ? "linear-gradient(135deg,#2563EB,#1E3A8A)" : "#F9FAFB",
                     color: isSelected ? "#fff" : "#374151",
-                    fontWeight: isSelected ? 700 : 500,
-                    fontSize: 15,
-                    cursor: "pointer",
-                    transform: isSelected ? "scale(1.05)" : "scale(1)",
-                    transition: "all 0.15s",
+                    fontWeight: isSelected ? 700 : 500, fontSize: 15, cursor: "pointer",
+                    transform: isSelected ? "scale(1.05)" : "scale(1)", transition: "all 0.15s",
                     boxShadow: isSelected ? "0 4px 14px rgba(37,99,235,0.3)" : "none",
                   }}
                 >
@@ -768,12 +824,25 @@ export default function CitizenBooking() {
             value={selectedDate}
             onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(""); }}
           />
+
+          {/* Priority 1: Government Holiday */}
           {selectedDate && officeStatus.closed && (
             <div style={{ marginTop: 16 }}>
               <OfficeClosedCard reason={officeStatus.reason} dateStr={effectiveDateStr} />
             </div>
           )}
-          <PrimaryButton onClick={() => setStep(5)} disabled={!selectedDate || officeStatus.closed}>
+
+          {/* Priority 2: Madam on Tour (only shown if NOT a holiday) */}
+          {selectedDate && !officeStatus.closed && activeTour && (
+            <div style={{ marginTop: 16 }}>
+              <MadamOnTourCard tour={activeTour} />
+            </div>
+          )}
+
+          <PrimaryButton
+            onClick={() => setStep(5)}
+            disabled={!selectedDate || isDateBlocked}
+          >
             {t.continue}
           </PrimaryButton>
         </Card>
@@ -797,8 +866,15 @@ export default function CitizenBooking() {
             </span>
           </div>
 
+          {/* Priority 1: Holiday */}
           {officeStatus.closed ? (
             <OfficeClosedCard reason={officeStatus.reason} dateStr={effectiveDateStr} />
+
+          /* Priority 2: Madam on Tour */
+          ) : activeTour ? (
+            <MadamOnTourCard tour={activeTour} />
+
+          /* Priority 3: No slots available */
           ) : !hasAvailableSlots ? (
             <div style={{
               background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12,
@@ -807,6 +883,8 @@ export default function CitizenBooking() {
             }}>
               ⚠️ No available slots for the selected duration today. Please try a shorter duration or a future date.
             </div>
+
+          /* Priority 4: Show slots */
           ) : (
             <>
               {/* Morning Section */}
@@ -899,7 +977,7 @@ export default function CitizenBooking() {
 
           <PrimaryButton
             onClick={() => setStep(6)}
-            disabled={!selectedSlot || officeStatus.closed}
+            disabled={!selectedSlot || isDateBlocked}
           >
             {t.continue}
           </PrimaryButton>
@@ -942,7 +1020,7 @@ export default function CitizenBooking() {
               }}
               placeholder={t.mobilePlaceholder}
               value={mobile}
-              onChange={(e) => setMobile(e.target.value.replace(/\D/g,"").slice(0,10))}
+              onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
               onFocus={(e) => (e.target.style.borderColor = "#2563EB")}
               onBlur={(e) => (e.target.style.borderColor = mobile.length > 0 && mobile.length < 10 ? "#F87171" : "#D1D5DB")}
             />
@@ -1174,93 +1252,40 @@ export default function CitizenBooking() {
 }
 
 // ─── SlotRow sub-component ────────────────────────────────────────────────────
-//
-// Status values from getSlotStatus():
-//   "available"   → white, clickable
-//   "past"        → very light grey, not clickable
-//   "booked"      → pink/red tint, "Booked" label, not clickable
-//   "too-short"   → very light grey (not enough room in group for duration), not clickable
-//   "run-blocked" → light grey (a slot in its run is taken), not clickable
-//
-// selectedRun: array of slot strings currently auto-selected (start + consecutive)
 
 function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selectedRun, appointmentDuration }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
       {slots.map((slotStr, i) => {
-        const status    = getSlotStatus(slotStr);
-        const isStart   = selectedSlot === slotStr;
-        const isInRun   = !isStart && selectedRun.includes(slotStr);
+        const status      = getSlotStatus(slotStr);
+        const isStart     = selectedSlot === slotStr;
+        const isInRun     = !isStart && selectedRun.includes(slotStr);
         const isClickable = status === "available";
 
-        // ── Visual config per state ──────────────────────────────────────
         let bg, border, color, fontWeight, shadow, scale, opacity, sublabel;
 
         if (isStart) {
-          // The tapped start slot — bold blue
-          bg = "linear-gradient(135deg,#2563EB,#1E3A8A)";
-          border = "#2563EB";
-          color = "#fff";
-          fontWeight = 700;
-          shadow = "0 4px 12px rgba(37,99,235,0.35)";
-          scale = "scale(1.06)";
-          opacity = 1;
+          bg = "linear-gradient(135deg,#2563EB,#1E3A8A)"; border = "#2563EB";
+          color = "#fff"; fontWeight = 700; shadow = "0 4px 12px rgba(37,99,235,0.35)";
+          scale = "scale(1.06)"; opacity = 1;
           sublabel = <span style={{ display:"block", fontSize:9, color:"rgba(255,255,255,0.85)", fontWeight:700, marginTop:2 }}>Start</span>;
-
         } else if (isInRun) {
-          // Auto-selected consecutive slots — light blue
-          bg = "#DBEAFE";
-          border = "#93C5FD";
-          color = "#1E3A8A";
-          fontWeight = 700;
-          shadow = "none";
-          scale = "scale(1.03)";
-          opacity = 1;
+          bg = "#DBEAFE"; border = "#93C5FD"; color = "#1E3A8A"; fontWeight = 700;
+          shadow = "none"; scale = "scale(1.03)"; opacity = 1;
           sublabel = <span style={{ display:"block", fontSize:9, color:"#2563EB", fontWeight:700, marginTop:2 }}>✓</span>;
-
         } else if (status === "booked") {
-          // Already booked by someone else — pink tint
-          bg = "#FEE2E2";
-          border = "#FECACA";
-          color = "#9CA3AF";
-          fontWeight = 500;
-          shadow = "none";
-          scale = "scale(1)";
-          opacity = 1;
+          bg = "#FEE2E2"; border = "#FECACA"; color = "#9CA3AF"; fontWeight = 500;
+          shadow = "none"; scale = "scale(1)"; opacity = 1;
           sublabel = <span style={{ display:"block", fontSize:9, color:"#EF4444", fontWeight:700, marginTop:2 }}>Booked</span>;
-
         } else if (status === "too-short" || status === "run-blocked") {
-          // Not enough consecutive room for chosen duration — looks normal, just not clickable
-          bg = "#fff";
-          border = "#E5E7EB";
-          color = "#374151";
-          fontWeight = 500;
-          shadow = "none";
-          scale = "scale(1)";
-          opacity = 1;
-          sublabel = null;
-
+          bg = "#fff"; border = "#E5E7EB"; color = "#374151"; fontWeight = 500;
+          shadow = "none"; scale = "scale(1)"; opacity = 1; sublabel = null;
         } else if (status === "past") {
-          // Past time — very faint
-          bg = "#F9FAFB";
-          border = "#E5E7EB";
-          color = "#D1D5DB";
-          fontWeight = 400;
-          shadow = "none";
-          scale = "scale(1)";
-          opacity = 0.45;
-          sublabel = null;
-
+          bg = "#F9FAFB"; border = "#E5E7EB"; color = "#D1D5DB"; fontWeight = 400;
+          shadow = "none"; scale = "scale(1)"; opacity = 0.45; sublabel = null;
         } else {
-          // "available" and not in run — normal white
-          bg = "#fff";
-          border = "#E5E7EB";
-          color = "#374151";
-          fontWeight = 500;
-          shadow = "none";
-          scale = "scale(1)";
-          opacity = 1;
-          sublabel = null;
+          bg = "#fff"; border = "#E5E7EB"; color = "#374151"; fontWeight = 500;
+          shadow = "none"; scale = "scale(1)"; opacity = 1; sublabel = null;
         }
 
         return (
@@ -1276,19 +1301,11 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
               ""
             }
             style={{
-              padding: "10px 4px",
-              borderRadius: 10,
-              border: `2px solid ${border}`,
-              background: bg,
-              color,
-              fontWeight,
+              padding: "10px 4px", borderRadius: 10,
+              border: `2px solid ${border}`, background: bg, color, fontWeight,
               fontSize: 12,
               cursor: isClickable ? "pointer" : (status === "too-short" || status === "run-blocked") ? "default" : "not-allowed",
-              opacity,
-              transform: scale,
-              transition: "all 0.15s",
-              boxShadow: shadow,
-              minHeight: 52,
+              opacity, transform: scale, transition: "all 0.15s", boxShadow: shadow, minHeight: 52,
             }}
           >
             {slotStr.replace(" PM","").replace(" AM","")}
