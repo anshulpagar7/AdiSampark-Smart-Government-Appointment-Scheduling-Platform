@@ -692,7 +692,7 @@ const liveStyles = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function MDDashboard() {
+export default function MDDashboard({ onLogout }) {
   const [appointments, setAppointments] = useState([]);
   const [meetings, setMeetings]         = useState([]);
   const [tourDiary, setTourDiary]       = useState([]);
@@ -1004,6 +1004,9 @@ export default function MDDashboard() {
               {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
             </p>
           </div>
+          {onLogout && (
+            <MDLogoutButton onClick={onLogout} />
+          )}
         </div>
       </div>
 
@@ -1411,6 +1414,35 @@ export default function MDDashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+function MDLogoutButton({ onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display:      "flex",
+        alignItems:   "center",
+        gap:          7,
+        padding:      "8px 16px",
+        borderRadius: 10,
+        border:       "none",
+        cursor:       "pointer",
+        background:   hovered ? "rgba(220,38,38,0.25)" : "rgba(255,255,255,0.12)",
+        color:        hovered ? "#FCA5A5" : "rgba(255,255,255,0.85)",
+        fontSize:     13,
+        fontWeight:   600,
+        transition:   "all 0.15s ease",
+        flexShrink:   0,
+      }}
+    >
+      <span style={{ fontSize: 15 }}>🚪</span>
+      Logout
+    </button>
   );
 }
 
