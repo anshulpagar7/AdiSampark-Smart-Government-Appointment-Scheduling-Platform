@@ -75,6 +75,89 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+// ─── Reusable Countdown Utilities ───────────────────────────────────────────────
+// Shared by the Executive Meeting badge and the Current Citizen timer so both
+// systems stay consistent and we avoid duplicate timer implementations.
+
+// Build a real Date from a date string ("YYYY-MM-DD") + a time string that may be
+// "12:10 PM" or "14:10". Falls back to today's date when dateStr is missing.
+function buildDateTime(dateStr, timeStr) {
+  if (!timeStr) return null;
+  const base = dateStr || getTodayLocalDate();
+  const s = timeStr.trim();
+  let hours, minutes;
+  if (/am|pm/i.test(s)) {
+    const d = new Date(`1970-01-01 ${s}`);
+    if (isNaN(d)) return null;
+    hours = d.getHours();
+    minutes = d.getMinutes();
+  } else {
+    const [h, m] = s.split(":").map(Number);
+    hours = h;
+    minutes = m || 0;
+  }
+  const dt = new Date(`${base}T00:00:00`);
+  if (isNaN(dt)) return null;
+  dt.setHours(hours, minutes, 0, 0);
+  return dt;
+}
+
+// Compute the end Date for an appointment: start time + duration (minutes).
+// extraMinutes lets the UI apply a local "extend" before Supabase round-trips.
+function getAppointmentEndDate(appt, extraMinutes = 0) {
+  if (!appt) return null;
+  const start = buildDateTime(appt.appointment_date, appt.appointment_time);
+  if (!start) return null;
+  const durMin = Number(appt.appointment_duration) || 0;
+  return new Date(start.getTime() + (durMin + extraMinutes) * 60000);
+}
+
+// Format a positive seconds value as HH:MM:SS (e.g. 765 -> "00:12:45").
+function formatHMS(totalSeconds) {
+  const sec = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+// Reusable per-second countdown hook. Given a target Date, returns the live
+// remaining seconds (never below 0) and whether time is over. Updates each second.
+// onExpire fires exactly once, the first tick the target is reached/passed.
+function useCountdown(targetDate, onExpire) {
+  const computeRemaining = () => {
+    if (!targetDate) return null;
+    return Math.round((targetDate.getTime() - Date.now()) / 1000);
+  };
+
+  const [remaining, setRemaining] = useState(computeRemaining);
+  const firedRef = useRef(false);
+
+  // Reset the one-shot expire guard whenever the target changes.
+  useEffect(() => {
+    firedRef.current = false;
+    setRemaining(computeRemaining());
+  }, [targetDate ? targetDate.getTime() : null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!targetDate) return;
+    const tick = () => {
+      const rem = computeRemaining();
+      setRemaining(rem);
+      if (rem !== null && rem <= 0 && !firedRef.current) {
+        firedRef.current = true;
+        if (typeof onExpire === "function") onExpire();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [targetDate ? targetDate.getTime() : null, onExpire]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const safeRemaining = remaining === null ? null : Math.max(0, remaining);
+  return { remaining: safeRemaining, isOver: remaining !== null && remaining <= 0 };
+}
+
 // ─── Popup Component ──────────────────────────────────────────────────────────
 
 function Popup({ data, onComplete, onClose }) {
@@ -690,6 +773,146 @@ const liveStyles = {
   rowValue:   { fontSize: 13, fontWeight: 700, color: "#fff", textAlign: "right" },
 };
 
+// ─── Current Citizen Live Timer + Progress Bar ──────────────────────────────────
+// Renders inside the existing "Currently Meeting" card. Uses the shared
+// useCountdown hook (same logic the Executive Meeting badge style follows) so the
+// countdown style stays consistent. Shows HH:MM:SS, "Time Over" at zero, and a
+// progress bar that drains and changes color by remaining percentage.
+
+function CurrentCitizenTimer({ citizen, extraMinutes = 0, onExpire }) {
+  const endDate   = getAppointmentEndDate(citizen, extraMinutes);
+  const startDate = buildDateTime(citizen?.appointment_date, citizen?.appointment_time);
+
+  const { remaining, isOver } = useCountdown(endDate, onExpire);
+
+  // Total allocated window in seconds (duration + any local extension).
+  const totalSec =
+    startDate && endDate ? Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 1000)) : 1;
+
+  // Percentage of time remaining (0–100).
+  const pctRemaining = remaining === null ? 0 : Math.max(0, Math.min(100, (remaining / totalSec) * 100));
+
+  // Color thresholds: ≥75% blue, ≥50% amber, >0 (down to 20%) red, over = solid red.
+  let barColor;
+  if (isOver)                 barColor = "#DC2626"; // solid red
+  else if (pctRemaining >= 75) barColor = "#2563EB"; // blue
+  else if (pctRemaining >= 50) barColor = "#F59E0B"; // amber
+  else                          barColor = "#EF4444"; // red (covers the 20% band and below)
+
+  const display = endDate ? (isOver ? "Time Over" : formatHMS(remaining)) : "—";
+
+  return (
+    <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: "14px 20px", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Time Remaining</span>
+        <span style={{
+          fontFamily: "monospace",
+          fontSize: 22,
+          fontWeight: 900,
+          letterSpacing: "0.06em",
+          color: isOver ? "#DC2626" : "#2563EB",
+        }}>
+          {display}
+        </span>
+      </div>
+      <div style={{ height: 8, background: "rgba(255,255,255,0.7)", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{
+          height: "100%",
+          width: isOver ? "100%" : `${pctRemaining}%`,
+          background: barColor,
+          borderRadius: 99,
+          transition: "width 1s linear, background 0.4s ease",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Citizen Time-Over Popup ────────────────────────────────────────────────────
+// Shown automatically when a citizen's timer hits zero. Auto-dismisses after 30s
+// (handled by the shared 30s pattern), or closes immediately on any action.
+
+function CitizenTimeOverPopup({ data, onCompleted, onNext, onExtend, onDismiss, hasNext }) {
+  const [seconds, setSeconds] = useState(30);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setSeconds(s => {
+        if (s <= 1) { clearInterval(t); onDismiss(); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [onDismiss]);
+
+  const accentColor = "#DC2626";
+
+  return (
+    <div style={popupStyles.overlay}>
+      <div style={{ ...popupStyles.box, borderTop: `5px solid ${accentColor}` }}>
+        <div style={popupStyles.progressTrack}>
+          <div style={{ ...popupStyles.progressFill, width: `${(seconds / 30) * 100}%`, background: accentColor }} />
+        </div>
+        <div style={{ padding: "24px 28px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+            <div>
+              <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: accentColor, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                ⏰ Citizen Time Completed
+              </p>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>{data.citizen_name || ""}</h2>
+            </div>
+            <span style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 700, background: "#F3F4F6", borderRadius: 99, padding: "4px 10px", flexShrink: 0, marginLeft: 12 }}>
+              {seconds}s
+            </span>
+          </div>
+
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#991B1B", lineHeight: 1.6 }}>
+              The allocated appointment time has ended. Please conclude the discussion or extend if necessary.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={onCompleted} style={popupStyles.completeBtn}>
+                ✓ Meeting Completed
+              </button>
+              <button
+                onClick={onNext}
+                disabled={!hasNext}
+                style={{
+                  flex: 1, padding: "12px 16px", borderRadius: 12, border: "none",
+                  background: hasNext ? "linear-gradient(135deg,#2563EB,#3B82F6)" : "#E5E7EB",
+                  color: hasNext ? "#fff" : "#9CA3AF",
+                  fontSize: 14, fontWeight: 700, cursor: hasNext ? "pointer" : "not-allowed",
+                  boxShadow: hasNext ? "0 4px 12px rgba(37,99,235,0.3)" : "none",
+                }}
+              >
+                ➡ Next Citizen
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={onExtend}
+                style={{
+                  flex: 1, padding: "12px 16px", borderRadius: 12, border: "none",
+                  background: "linear-gradient(135deg,#D97706,#F59E0B)", color: "#fff",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
+                }}
+              >
+                ⏱ Extend 5 Minutes
+              </button>
+              <button onClick={onDismiss} style={popupStyles.closeBtn}>
+                ✖ Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MDDashboard({ onLogout }) {
@@ -698,6 +921,14 @@ export default function MDDashboard({ onLogout }) {
   const [tourDiary, setTourDiary]       = useState([]);
   const [popup, setPopup]               = useState(null);
   const [greeting, setGreeting]         = useState(getDynamicGreeting());
+
+  // ── Current Citizen timer state ───────────────────────────────────────────
+  // Separate, dedicated popup so it never collides with the existing `popup`
+  // (breaks / meetings / legacy appointment popup).
+  const [timeOverPopup, setTimeOverPopup] = useState(null);
+  // Local "Extend 5 min" offsets keyed by appointment id (applied instantly,
+  // before the Supabase round-trip completes).
+  const [extensions, setExtensions] = useState({});
 
   // ── Timeline state — kept independent from realtime/today refreshes ──────
   const [timelineDate, setTimelineDate]         = useState(getTodayLocalDate());
@@ -717,6 +948,25 @@ export default function MDDashboard({ onLogout }) {
   const timelineRef = useRef(null);
 
   const shownPopupsRef = useRef(new Set());
+
+  // Tracks citizen time-over popups already handled, persisted to sessionStorage
+  // so a page refresh after handling does not re-trigger the same popup.
+  const handledTimeOverRef = useRef(
+    (() => {
+      try {
+        const raw = sessionStorage.getItem("md_handled_timeover");
+        return new Set(raw ? JSON.parse(raw) : []);
+      } catch {
+        return new Set();
+      }
+    })()
+  );
+
+  const persistHandledTimeOver = useCallback(() => {
+    try {
+      sessionStorage.setItem("md_handled_timeover", JSON.stringify([...handledTimeOverRef.current]));
+    } catch { /* ignore storage failures */ }
+  }, []);
 
   // ── Fetch today's data (appointments + meetings + tour diary) ─────────────
   // Uses a ref so realtime callback never captures a stale closure
@@ -849,21 +1099,12 @@ export default function MDDashboard({ onLogout }) {
     return () => clearInterval(t);
   }, []);
 
-  // ── Effect: popup logic runs only on today's appointments/meetings ─────────
+  // ── Effect: popup logic for meetings + breaks (Executive Meeting popup
+  //    unchanged). The Current Citizen "Time Over" popup is driven separately by
+  //    the live countdown timer for exact, to-the-second accuracy. ────────────
   useEffect(() => {
     function checkPopups() {
       const now = nowMinutes();
-
-      const inCabin = appointments.find(a => a.status === "In Cabin");
-      if (inCabin && inCabin.appointment_end_time) {
-        const endMin = parseTimeToMinutes(inCabin.appointment_end_time);
-        const key = `appt-${inCabin.appointment_id}`;
-        if (now >= endMin && !shownPopupsRef.current.has(key)) {
-          shownPopupsRef.current.add(key);
-          setPopup({ type: "appointment", ...inCabin });
-          return;
-        }
-      }
 
       for (const m of meetings) {
         if (!m.meeting_time) continue;
@@ -895,13 +1136,113 @@ export default function MDDashboard({ onLogout }) {
     return () => clearInterval(t);
   }, [appointments, meetings]);
 
-  const handleMarkCompleted = async () => {
-    if (!popup || popup.type !== "appointment") return;
-    const { error } = await supabase.from("appointments").update({ status: "Completed" }).eq("id", popup.id);
-    if (error) console.error("[MDDashboard] mark completed error:", error);
-    setPopup(null);
+  // ── Current Citizen helpers (derived here so handlers can use them) ────────
+  const currentInCabin = appointments.find(a => a.status === "In Cabin") || null;
+  const waitingSorted   = sortByTime(appointments.filter(a => a.status === "Waiting"), "appointment_time");
+  const nextInQueue     = waitingSorted[0] || null;
+
+  // Fired by the live countdown the instant a citizen's time reaches zero.
+  const handleCitizenTimeOver = useCallback((citizen) => {
+    if (!citizen) return;
+    const key = `timeover-${citizen.id ?? citizen.appointment_id}`;
+    // Prevent duplicates + don't re-show after a handled refresh.
+    if (handledTimeOverRef.current.has(key)) return;
+    setTimeOverPopup(prev => {
+      if (prev) return prev; // only ever one popup at a time
+      return { ...citizen, _key: key };
+    });
+  }, []);
+
+  const closeTimeOverPopup = useCallback((markHandled) => {
+    setTimeOverPopup(prev => {
+      if (prev && markHandled) {
+        handledTimeOverRef.current.add(prev._key);
+        persistHandledTimeOver();
+      }
+      return null;
+    });
+  }, [persistHandledTimeOver]);
+
+  // ✓ Meeting Completed → status Completed, refresh, close.
+  const handleTimeOverCompleted = async () => {
+    const c = timeOverPopup;
+    if (!c) return;
+    const { error } = await supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id);
+    if (error) console.error("[MDDashboard] time-over complete error:", error);
+    closeTimeOverPopup(true);
     fetchAll();
   };
+
+  // ➡ Next Citizen → current Completed, next Waiting → In Cabin, refresh, close.
+  const handleTimeOverNext = async () => {
+    const c = timeOverPopup;
+    if (!c) return;
+    const next = nextInQueue;
+    const ops = [supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id)];
+    if (next) ops.push(supabase.from("appointments").update({ status: "In Cabin" }).eq("id", next.id));
+    const results = await Promise.all(ops);
+    results.forEach(r => { if (r.error) console.error("[MDDashboard] next-citizen error:", r.error); });
+    closeTimeOverPopup(true);
+    fetchAll();
+  };
+
+  // ⏱ Extend 5 Minutes → bump duration in Supabase, restart countdown, close.
+  const handleTimeOverExtend = async () => {
+    const c = timeOverPopup;
+    if (!c) return;
+    const id = c.id ?? c.appointment_id;
+    const newDuration = (Number(c.appointment_duration) || 0) + 5;
+
+    // Apply locally first so the countdown restarts immediately (extends by 5).
+    setExtensions(prev => ({ ...prev, [id]: (prev[id] || 0) + 5 }));
+
+    // Clear the handled flag for this key so a future expiry re-triggers.
+    handledTimeOverRef.current.delete(`timeover-${id}`);
+    persistHandledTimeOver();
+
+    const { error } = await supabase
+      .from("appointments")
+      .update({ appointment_duration: newDuration })
+      .eq("id", c.id);
+    if (error) console.error("[MDDashboard] extend error:", error);
+
+    closeTimeOverPopup(false); // not "handled" — timer simply restarts
+    fetchAll();
+  };
+
+  // ✖ Dismiss → close only, no DB change. Marked handled so it won't re-pop.
+  const handleTimeOverDismiss = () => {
+    closeTimeOverPopup(true);
+  };
+
+  // If Staff changes the in-cabin citizen's status away (e.g., to Completed) via
+  // realtime, any open time-over popup for them is no longer relevant — close it.
+  useEffect(() => {
+    if (!timeOverPopup) return;
+    const stillInCabin = currentInCabin
+      && (currentInCabin.id ?? currentInCabin.appointment_id) === (timeOverPopup.id ?? timeOverPopup.appointment_id);
+    if (!stillInCabin) {
+      handledTimeOverRef.current.add(timeOverPopup._key);
+      persistHandledTimeOver();
+      setTimeOverPopup(null);
+    }
+  }, [currentInCabin?.id, currentInCabin?.appointment_id, timeOverPopup, persistHandledTimeOver]);
+
+
+  // When a citizen leaves the cabin (status changed via realtime), reset their
+  // local extension offset so it doesn't carry over to a future session.
+  useEffect(() => {
+    if (!currentInCabin) { if (Object.keys(extensions).length) setExtensions({}); return; }
+    const id = currentInCabin.id ?? currentInCabin.appointment_id;
+    setExtensions(prev => {
+      const keys = Object.keys(prev);
+      if (keys.length === 0) return prev;
+      if (keys.length === 1 && String(keys[0]) === String(id)) return prev;
+      // Keep only the current citizen's offset.
+      return prev[id] != null ? { [id]: prev[id] } : {};
+    });
+  }, [currentInCabin?.id, currentInCabin?.appointment_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // ── Date navigation helpers ───────────────────────────────────────────────
   // Recompute today fresh each call so it's never stale
@@ -934,9 +1275,11 @@ export default function MDDashboard({ onLogout }) {
     }
   }
 
-  const currentCitizen  = appointments.find(a => a.status === "In Cabin") || null;
-  const waitingCitizens = sortByTime(appointments.filter(a => a.status === "Waiting"), "appointment_time");
-  const nextCitizen     = waitingCitizens[0] || null;
+  // Reuse the values derived above (used by the timer + action handlers) so we
+  // don't recompute the same filters twice.
+  const currentCitizen  = currentInCabin;
+  const waitingCitizens = waitingSorted;
+  const nextCitizen     = nextInQueue;
   const completedCount  = appointments.filter(a => a.status === "Completed").length;
   const totalCount      = appointments.length;
   const progressPct     = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -950,6 +1293,17 @@ export default function MDDashboard({ onLogout }) {
     <div style={{ minHeight: "100vh", background: "#F0F4FF", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
 
       {popup && <Popup data={popup} onComplete={handleMarkCompleted} onClose={() => setPopup(null)} />}
+
+      {timeOverPopup && (
+        <CitizenTimeOverPopup
+          data={timeOverPopup}
+          hasNext={!!nextInQueue}
+          onCompleted={handleTimeOverCompleted}
+          onNext={handleTimeOverNext}
+          onExtend={handleTimeOverExtend}
+          onDismiss={handleTimeOverDismiss}
+        />
+      )}
 
       <style>{`
         @keyframes pulse-ring {
@@ -1062,6 +1416,11 @@ export default function MDDashboard({ onLogout }) {
                   {currentCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {currentCitizen.appointment_end_time}</span>}
                   {currentCitizen.appointment_duration && <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
                 </div>
+                <CurrentCitizenTimer
+                  citizen={currentCitizen}
+                  extraMinutes={extensions[currentCitizen.id ?? currentCitizen.appointment_id] || 0}
+                  onExpire={() => handleCitizenTimeOver(currentCitizen)}
+                />
                 <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Token</span>
                   <span style={{ fontSize: 28, fontWeight: 900, color: "#2563EB", letterSpacing: "0.04em" }}>{currentCitizen.appointment_id}</span>
