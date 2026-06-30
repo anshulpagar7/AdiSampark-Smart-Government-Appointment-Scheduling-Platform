@@ -24,11 +24,11 @@ function ProtectedMD({ isLoggedIn, children }) {
 export default function App() {
   // Persistent auth — survives browser refresh
   const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(
-    localStorage.getItem("staffLoggedIn") === "true"
+    sessionStorage.getItem("staffLoggedIn") === "true"
   );
 
   const [isMDLoggedIn, setIsMDLoggedIn] = useState(
-    localStorage.getItem("mdLoggedIn") === "true"
+    sessionStorage.getItem("mdLoggedIn") === "true"
   );
 
   const navigate = useNavigate();
@@ -44,7 +44,7 @@ export default function App() {
         element={
           <StaffLogin
             onLogin={() => {
-              localStorage.setItem("staffLoggedIn", "true");
+              sessionStorage.setItem("staffLoggedIn", "true");
               setIsStaffLoggedIn(true);
               navigate("/staff");
             }}
@@ -68,7 +68,7 @@ export default function App() {
         element={
           <MDLogin
             onLogin={() => {
-              localStorage.setItem("mdLoggedIn", "true");
+              sessionStorage.setItem("mdLoggedIn", "true");
               setIsMDLoggedIn(true);
               navigate("/md");
             }}
