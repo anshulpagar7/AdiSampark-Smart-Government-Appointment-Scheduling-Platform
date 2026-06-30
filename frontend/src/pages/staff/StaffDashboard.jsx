@@ -82,7 +82,7 @@ export default function StaffDashboard() {
           <p style={styles.pageEyebrow}>STAFF OPERATIONS CENTER</p>
           <h1 style={styles.pageTitle}>{greeting.text} {greeting.icon}</h1>
           <p style={styles.pageSub}>
-            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} &nbsp;•&nbsp; Shabri Staff Portal
+            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} &nbsp;•&nbsp; ADI SAMPARK — Staff Portal
           </p>
         </div>
         <div style={styles.headerActions}>
