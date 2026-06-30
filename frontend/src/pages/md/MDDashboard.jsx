@@ -454,7 +454,7 @@ function printTourDiaryMD(tours) {
     <body>
       <div class="gov-header">
         <div class="gov-org">Maharashtra State Co-operative Tribal Development Corporation Ltd.</div>
-        <div class="gov-system">Shabri Smart Appointment Management System</div>
+        <div class="gov-system">ADI SAMPARK — Smart Appointment Portal</div>
         <div class="gov-sub">Official Tour Diary — Managing Director</div>
       </div>
 
@@ -474,7 +474,7 @@ function printTourDiaryMD(tours) {
       <div class="grid">${cards}</div>
 
       <div class="footer">
-        Shabri Smart Appointment Management System &nbsp;·&nbsp;
+        ADI SAMPARK — Smart Appointment Portal &nbsp;·&nbsp;
         Maharashtra State Co-operative Tribal Development Corporation Ltd. &nbsp;·&nbsp;
         Printed on ${new Date().toLocaleString("en-IN")}
       </div>
