@@ -457,12 +457,12 @@ function printTourDiaryMD(tours) {
       <div class="gov-header">
         <div class="gov-org">Maharashtra State Co-operative Tribal Development Corporation Ltd.</div>
         <div class="gov-system">ADI SAMPARK — Smart Appointment Portal</div>
-        <div class="gov-sub">Official Tour Diary — Managing Director</div>
+        <div class="gov-sub">Official Tour Diary — Commissioner / Managing Director</div>
       </div>
 
       <div class="report-title">✈️ Tour Diary</div>
       <div class="report-sub">
-        Travel record of Leena Bansod, Managing Director &nbsp;·&nbsp;
+        Travel record of Leena Bansod, Commissioner / Managing Director &nbsp;·&nbsp;
         Printed: ${new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" })}
       </div>
 
@@ -1438,7 +1438,7 @@ export default function MDDashboard({ onLogout }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, position: "relative" }}>
             <div style={{ fontSize: 48, lineHeight: 1 }}>👩‍💼</div>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>Leena Bansod</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Managing Director</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Commissioner / Managing Director</span>
           </div>
         </div>
 
