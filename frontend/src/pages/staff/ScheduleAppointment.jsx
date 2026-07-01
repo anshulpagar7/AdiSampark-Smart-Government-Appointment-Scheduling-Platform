@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
+import { syncCalendarCreate } from "../../lib/calendarSync";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED SLOT ENGINE  (identical to CitizenBooking — do not diverge)
@@ -354,7 +355,7 @@ export default function ScheduleAppointment() {
     const endTime = computeEndTime(selectedSlot, duration);
 
     setSaving(true);
-    const { error } = await supabase.from("appointments").insert([{
+    const { data: insertedRow, error } = await supabase.from("appointments").insert([{
       appointment_id:       appointmentId,
       citizen_name:         form.name,
       mobile:               form.mobile,
@@ -367,10 +368,36 @@ export default function ScheduleAppointment() {
       location:             form.location,
       status:               "Waiting",
       booking_source:       "Walk-In",
-    }]);
+    }]).select().single();
     setSaving(false);
 
     if (error) { console.log(error); alert("Failed to save: " + error.message); return; }
+
+    // ── Google Calendar sync (non-blocking — appointment already saved) ────
+    try {
+      const calResult = await syncCalendarCreate({
+        appointment_id:       appointmentId,
+        citizen_name:         form.name,
+        purpose:              form.purpose,
+        appointment_date:     form.date,
+        appointment_time:     selectedSlot,
+        appointment_end_time: endTime,
+        appointment_duration: duration,
+        officer_name:         form.officer,
+        location:             form.location,
+        mobile:               form.mobile,
+        notes:                null,
+      });
+
+      if (calResult?.google_event_id) {
+        await supabase
+          .from("appointments")
+          .update({ google_event_id: calResult.google_event_id })
+          .eq("appointment_id", appointmentId);
+      }
+    } catch (calErr) {
+      console.error("[ScheduleAppointment] Calendar sync failed:", calErr);
+    }
     setCreated(true);
   };
 
