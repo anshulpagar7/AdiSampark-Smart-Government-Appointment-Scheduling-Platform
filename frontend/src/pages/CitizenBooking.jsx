@@ -6,6 +6,7 @@ import { useRealtime } from "../hooks/useRealtime";
 import tdcLogo from "../assets/tdc-logo.jpeg";
 import tribalLogo from "../assets/tribal-logo.jpg";
 import commissionerLogo from "../assets/Commissioner.jpeg";
+import { syncCalendarCreate } from "../lib/calendarSync";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -574,7 +575,7 @@ export default function CitizenBooking() {
   const saveAppointment = async () => {
     const bookingDate = appointmentType === "today" ? todayStr : selectedDate;
 
-    const { error } = await supabase
+    const { data: insertedRow, error } = await supabase
       .from("appointments")
       .insert({
         appointment_id:       appointmentId,
@@ -587,12 +588,36 @@ export default function CitizenBooking() {
         officer_name:         OFFICER.name,
         location:             arrivingFrom,
         status:               "Waiting",
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error(error);
       alert("Failed to book appointment");
       return;
+    }
+
+    // ── Google Calendar sync (non-blocking — booking is already saved) ────────
+    const calendarResult = await syncCalendarCreate({
+      appointment_id:       appointmentId,
+      citizen_name:         name,
+      purpose:              selectedPurpose,
+      appointment_date:     bookingDate,
+      appointment_time:     selectedSlot,
+      appointment_duration: appointmentDuration,
+      officer_name:         OFFICER.name,
+      location:             arrivingFrom,
+      mobile,
+      notes,
+    });
+
+    // Persist google_event_id back into the row so staff can update/delete later
+    if (calendarResult?.google_event_id) {
+      await supabase
+        .from("appointments")
+        .update({ google_event_id: calendarResult.google_event_id })
+        .eq("appointment_id", appointmentId);
     }
 
     const { data: dayAppointments } = await supabase
