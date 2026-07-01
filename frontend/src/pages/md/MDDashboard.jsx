@@ -953,7 +953,7 @@ export default function MDDashboard({ onLogout }) {
 
   // ── Mobile / Desktop view toggle ─────────────────────────────────────────
   const [isMobileView, setIsMobileView] = useState(
-    () => window.innerWidth < 768
+    () => typeof window !== "undefined" && window.innerWidth < 768
   );
 
   // ── Current Citizen timer state ───────────────────────────────────────────
@@ -1459,6 +1459,7 @@ export default function MDDashboard({ onLogout }) {
             progressPct={progressPct}
           />
         ) : (
+        <>
         <div style={{ background: "linear-gradient(120deg, #1E3A8A 0%, #2563EB 50%, #7C3AED 100%)", borderRadius: 24, padding: "36px 40px", marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 8px 32px rgba(37,99,235,0.35)", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", top: -40, right: 120, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
           <div style={{ position: "absolute", bottom: -60, right: -20, width: 240, height: 240, borderRadius: "50%", background: "rgba(255,255,255,0.04)" }} />
@@ -1869,7 +1870,7 @@ export default function MDDashboard({ onLogout }) {
             )}
           </div>
         </div>
-        )} {/* end desktop view */}
+        </> )} {/* end desktop view */}
       </div>
     </div>
   );
