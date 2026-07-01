@@ -206,6 +206,7 @@ export default function ExecutiveMeetings() {
           appointment_end_time: data.meeting_end_time,
           officer_name:     "Leena Bansod",
           notes:            data.notes || null,
+          meeting_link:     data.meet_link || null,
         }).catch(e => console.error("[ExecutiveMeetings] calendar update failed:", e));
       }
     } else {
@@ -231,6 +232,7 @@ export default function ExecutiveMeetings() {
           notes:                data.notes || null,
           mobile:               null,
           location:             null,
+          meeting_link:         data.meet_link || null,
         });
 
         if (calResult?.google_event_id) {
