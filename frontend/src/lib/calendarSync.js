@@ -20,14 +20,17 @@ export async function syncCalendarCreate(fields) {
     });
 
     if (error) {
+      // Log the full error context including what was sent
       console.error("[calendarSync] create error:", error);
+      console.error("[calendarSync] fields sent:", JSON.stringify({ action: "create", ...fields }, null, 2));
       return null;
     }
 
     console.log("[calendarSync] created:", data?.google_event_id);
-    return data; // { success, action, google_event_id, event_link }
+    return data;
   } catch (err) {
     console.error("[calendarSync] create exception:", err);
+    console.error("[calendarSync] fields sent:", JSON.stringify({ action: "create", ...fields }, null, 2));
     return null;
   }
 }
