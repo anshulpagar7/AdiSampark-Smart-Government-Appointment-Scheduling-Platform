@@ -1404,8 +1404,7 @@ export default function MDDashboard({ onLogout }) {
             </div>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Government of Maharashtra</p>
-            <h2 style={{ margin: "2px 0 0", fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1.3 }}>Maharashtra State Cooperative Tribal Development Corporation Limited</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.2, letterSpacing: "0.02em" }}>Adivasi Vikas Bhavan</h2>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
