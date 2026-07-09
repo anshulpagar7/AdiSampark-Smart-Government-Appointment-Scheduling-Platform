@@ -9,6 +9,7 @@ export default function MDLogin({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [interfacePref, setInterfacePref] = useState("mobile"); // "mobile" | "desktop"
 
   // ── Responsive: single-column mobile layout below 768px ──
   const [isMobile, setIsMobile] = useState(
@@ -51,6 +52,9 @@ export default function MDLogin({ onLogin }) {
       setError("Unauthorized access.");
       return;
     }
+
+    // Persist the chosen interface so MDDashboard opens directly in it
+    try { sessionStorage.setItem("md_view_pref", interfacePref); } catch { /* ignore */ }
 
     if (onLogin) onLogin();
   };
@@ -144,6 +148,43 @@ export default function MDLogin({ onLogin }) {
                 style={styles.input}
                 onKeyDown={e => e.key === "Enter" && handleLogin()}
               />
+            </div>
+          </div>
+
+          {/* ── Interface selector ── */}
+          <div style={{ marginTop: "22px" }}>
+            <label style={styles.label}>Choose Interface</label>
+            <div style={styles.ifaceRow}>
+              {[
+                { key: "mobile",  icon: "📱", title: "Mobile",  desc: "Compact view" },
+                { key: "desktop", icon: "🖥️", title: "Desktop", desc: "Full dashboard" },
+              ].map(opt => {
+                const active = interfacePref === opt.key;
+                return (
+                  <div
+                    key={opt.key}
+                    onClick={() => setInterfacePref(opt.key)}
+                    style={{
+                      ...styles.ifaceCard,
+                      border: active ? "2px solid #2563EB" : "2px solid #E2E8F0",
+                      background: active ? "#EFF6FF" : "#F8FAFC",
+                      boxShadow: active ? "0 4px 12px rgba(37,99,235,0.18)" : "none",
+                    }}
+                  >
+                    <span style={{ fontSize: "26px" }}>{opt.icon}</span>
+                    <p style={{ margin: "6px 0 0", fontSize: "14px", fontWeight: "800", color: active ? "#1E3A8A" : "#374151" }}>{opt.title}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: "11px", color: "#64748B", fontWeight: "500" }}>{opt.desc}</p>
+                    <span style={{
+                      position: "absolute", top: "8px", right: "8px",
+                      width: "18px", height: "18px", borderRadius: "50%",
+                      border: active ? "none" : "2px solid #CBD5E1",
+                      background: active ? "#2563EB" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#fff", fontSize: "11px", fontWeight: "700",
+                    }}>{active ? "✓" : ""}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -336,6 +377,22 @@ const styles = {
     letterSpacing: "0.5px",
   },
   rightFooter: { marginTop: "32px", fontSize: "12px", color: "#CBD5E1", textAlign: "center" },
+
+  // ── Interface selector ──
+  ifaceRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "12px",
+  },
+  ifaceCard: {
+    position: "relative",
+    borderRadius: "14px",
+    padding: "16px 12px 14px",
+    textAlign: "center",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+    userSelect: "none",
+  },
 
   // ── Mobile-only brand header ──
   mobileBrand: {
