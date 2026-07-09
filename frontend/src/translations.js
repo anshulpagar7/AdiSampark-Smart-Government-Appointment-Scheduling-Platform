@@ -11,7 +11,7 @@ export const translations = {
     appointmentsWith: "Appointments With",
     designationMD:    "Commissioner / Managing Director",
     durationDesc:     "Select how long you need with the Commissioner / Managing Director. Each slot is 5 minutes.",
-    welcomeMessage:   "Welcome to the 'Adi Sampark' system! This facility has been started for the convenience of citizens. If you are unable to fix an appointment through this online portal due to technical or other reasons, please do not worry — the Hon. Commissioner will definitely find time to meet you. In such cases, you may visit 'Adivasi Vikas Bhavan' directly and contact the Hon. Commissioner's Personal Assistants Shri. Nandkishor Shingате or Shri. Ajay Vispute to schedule your appointment.",
+    welcomeMessage:   "Welcome to the 'Aadi Sampark' portal. This facility enables citizens to book hassle free appointment with the Commissioner / Managing Director. In case of difficulty in booking the online appointment call 0253-2575615 to book your appointment. Or just walk in to the office and register yourself.",
 
     // Progress bar
     step:     "Step",
@@ -82,7 +82,7 @@ export const translations = {
     appointmentsWith: "भेट घ्या",
     designationMD:    "आयुक्त / व्यवस्थापकीय संचालक",
     durationDesc:     "आयुक्त / व्यवस्थापकीय संचालक यांच्याशी किती वेळ हवा ते निवडा. प्रत्येक स्लॉट ५ मिनिटांचा आहे.",
-    welcomeMessage:   "'आदी संपर्क' या प्रणालीमध्ये आपले स्वागत आहे! ही सुविधा नागरिकांच्या सुलभतेसाठी सुरू करण्यात आली आहे. तांत्रिक कारणांमुळे किंवा इतर कारणास्तव या ऑनलाइन पोर्टलवरून आपल्याला भेटीची वेळ (Appointment) निश्चित करता आली नाही, तरी काळजी करू नका; मा. आयुक्त महोदय आपणास भेटण्यासाठी वेळ नक्कीच देतील. अशा वेळी, आपण थेट 'आदिवासी विकास भवन' येथे येऊन मा. आयुक्त महोदयांचे स्वीय सहायक श्री. नंदकिशोर शिंगाटे किंवा श्री. अजय विसपुते यांच्याशी संपर्क साधून आपली भेटीची वेळ निश्चित करून घेऊ शकता.",
+    welcomeMessage:   "'आदी संपर्क' प्रणाली वर आपले स्वागत आहे. ही सुविधा नागरिकांना आयुक्त / व्यवस्थापकीय संचालक यांची सुलभतेने भेट घेण्यासाठी उपयुक्त आहे. ही प्रणाली वापरतांना कोणतीही अडचण आल्यास कृपया ०२५३-२५७५६१५ या क्रमांकावर संपर्क साधून आपली अपॉइंटमेंट नोंदवा. किंवा आपण थेट कार्यालयात येऊनही आपल्या भेटीची नोंदणी करू शकता.",
 
     // Progress bar
     step:     "पायरी",
@@ -153,7 +153,7 @@ export const translations = {
     appointmentsWith: "अपॉइंटमेंट लें",
     designationMD:    "आयुक्त / प्रबंध निदेशक",
     durationDesc:     "आयुक्त / प्रबंध निदेशक के साथ आपको कितने समय की जरूरत है चुनें। प्रत्येक स्लॉट ५ मिनट का है।",
-    welcomeMessage:   "'आदी संपर्क' प्रणाली में आपका स्वागत है! यह सुविधा नागरिकों की सुविधा के लिए शुरू की गई है। यदि तकनीकी या अन्य कारणों से आप इस ऑनलाइन पोर्टल के माध्यम से अपॉइंटमेंट नहीं ले पा रहे हैं, तो चिंता न करें — मा. आयुक्त महोदय आपसे मिलने का समय अवश्य देंगे। ऐसी स्थिति में, आप सीधे 'आदिवासी विकास भवन' में आकर मा. आयुक्त महोदय के स्वीय सहायक श्री. नंदकिशोर शिंगाटे अथवा श्री. अजय विसपुते से संपर्क करके अपनी भेंट का समय निश्चित कर सकते हैं।",
+    welcomeMessage:   "'आदी संपर्क' पोर्टल में आपका स्वागत है। यह सुविधा नागरिकों को आयुक्त / प्रबंध निदेशक से सहजतापूर्वक भेंट का समय निश्चित करने में सहायक है। ऑनलाइन अपॉइंटमेंट बुक करने में किसी भी प्रकार की कठिनाई होने पर कृपया ०२५३-२५७५६१५ इस क्रमांक पर संपर्क करके अपनी अपॉइंटमेंट दर्ज करें। अथवा आप सीधे कार्यालय में आकर भी अपनी भेंट की नोंदणी करा सकते हैं।",
 
     // Progress bar
     step:     "चरण",
