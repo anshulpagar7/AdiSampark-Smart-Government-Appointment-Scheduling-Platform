@@ -32,8 +32,16 @@ const SLOT_GROUPS = [
 const ALL_SLOTS = SLOT_GROUPS.flatMap(g => g.slots);
 
 function slotToMinutes(slotStr) {
-  const d = new Date(`1970-01-01 ${slotStr}`);
-  return d.getHours() * 60 + d.getMinutes();
+  // Manual parse — new Date("1970-01-01 11:00 AM") returns Invalid Date on
+  // iOS Safari / mobile browsers, which broke past-slot filtering on mobile.
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(slotStr).trim());
+  if (!m) return -1;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const period = m[3].toUpperCase();
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + min;
 }
 
 function getOccupiedSlots(startSlot, durationMinutes) {
@@ -390,6 +398,7 @@ export default function CitizenBooking() {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
 
   const [appointmentId] = useState("SHA-" + Math.floor(1000 + Math.random() * 9000));
+  const [submitting, setSubmitting] = useState(false);
 
   const t = translations[language];
 
@@ -573,6 +582,9 @@ export default function CitizenBooking() {
 
   // ── Save appointment ──────────────────────────────────────────────────────
   const saveAppointment = async () => {
+    if (submitting) return; // guard against double-tap (mobile fires touch + click)
+    setSubmitting(true);
+
     const bookingDate = appointmentType === "today" ? todayStr : selectedDate;
 
     const { data: insertedRow, error } = await supabase
@@ -594,7 +606,8 @@ export default function CitizenBooking() {
 
     if (error) {
       console.error(error);
-      alert("Failed to book appointment");
+      alert("Failed to book appointment" + (error.message ? ": " + error.message : ""));
+      setSubmitting(false);
       return;
     }
 
@@ -633,6 +646,7 @@ export default function CitizenBooking() {
       setQueuePosition(pos > 0 ? pos : dayAppointments.length);
     }
 
+    setSubmitting(false);
     setStep(7);
   };
 
@@ -1111,8 +1125,8 @@ export default function CitizenBooking() {
             />
           </div>
 
-          <PrimaryButton onClick={saveAppointment} disabled={!name.trim() || mobile.length !== 10}>
-            {t.confirm}
+          <PrimaryButton onClick={saveAppointment} disabled={!name.trim() || mobile.length !== 10 || submitting}>
+            {submitting ? "..." : t.confirm}
           </PrimaryButton>
         </Card>
       )}
