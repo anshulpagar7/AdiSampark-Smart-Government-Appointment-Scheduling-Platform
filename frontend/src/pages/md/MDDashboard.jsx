@@ -952,9 +952,31 @@ export default function MDDashboard({ onLogout }) {
   const [greeting, setGreeting]         = useState(getDynamicGreeting());
 
   // ── Mobile / Desktop view toggle ─────────────────────────────────────────
-  const [isMobileView, setIsMobileView] = useState(
+  // deviceIsMobile tracks the real viewport (updates on resize/rotation).
+  // viewOverride is the user's manual choice via the toggle button
+  // (null = follow the device automatically).
+  const [deviceIsMobile, setDeviceIsMobile] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768
   );
+  const [viewOverride, setViewOverride] = useState(null);
+
+  useEffect(() => {
+    const onResize = () => setDeviceIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    onResize(); // re-check after mount (some mobile browsers report width late)
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
+  const isMobileView = viewOverride !== null ? viewOverride : deviceIsMobile;
+  const setIsMobileView = (updater) =>
+    setViewOverride(prev => {
+      const current = prev !== null ? prev : deviceIsMobile;
+      return typeof updater === "function" ? updater(current) : updater;
+    });
 
   // ── Current Citizen timer state ───────────────────────────────────────────
   // Separate, dedicated popup so it never collides with the existing `popup`
@@ -1388,38 +1410,44 @@ export default function MDDashboard({ onLogout }) {
       `}</style>
 
       {/* HEADER */}
-      <div style={{ background: "linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%)", padding: "0 36px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 24px rgba(37,99,235,0.3)", position: "sticky", top: 0, zIndex: 100, minHeight: 80 }}>
+      <div style={{ background: "linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%)", padding: isMobileView ? "10px 14px" : "0 36px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: isMobileView ? "wrap" : "nowrap", gap: isMobileView ? 8 : 0, boxShadow: "0 4px 24px rgba(37,99,235,0.3)", position: "sticky", top: 0, zIndex: 100, minHeight: isMobileView ? 60 : 80 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              <img src={tribalLogo} alt="Tribal Logo" style={{ width: 42, height: 42, objectFit: "contain" }} />
+            <div style={{ width: isMobileView ? 38 : 48, height: isMobileView ? 38 : 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              <img src={tribalLogo} alt="Tribal Logo" style={{ width: isMobileView ? 32 : 42, height: isMobileView ? 32 : 42, objectFit: "contain" }} />
             </div>
             <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
-            <div style={{ width: 48, height: 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              <img src={tdcLogo} alt="TDC Logo" style={{ width: 42, height: 42, objectFit: "contain" }} />
+            <div style={{ width: isMobileView ? 38 : 48, height: isMobileView ? 38 : 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              <img src={tdcLogo} alt="TDC Logo" style={{ width: isMobileView ? 32 : 42, height: isMobileView ? 32 : 42, objectFit: "contain" }} />
             </div>
             <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
-            <div style={{ width: 48, height: 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              <img src={commissionerLogo} alt="Commissioner Logo" style={{ width: 42, height: 42, objectFit: "contain" }} />
+            <div style={{ width: isMobileView ? 38 : 48, height: isMobileView ? 38 : 48, borderRadius: 10, background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              <img src={commissionerLogo} alt="Commissioner Logo" style={{ width: isMobileView ? 32 : 42, height: isMobileView ? 32 : 42, objectFit: "contain" }} />
             </div>
           </div>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.2, letterSpacing: "0.02em" }}>Adivasi Vikas Bhavan</h2>
+            <h2 style={{ margin: 0, fontSize: isMobileView ? 14 : 18, fontWeight: 800, color: "#fff", lineHeight: 1.2, letterSpacing: "0.02em" }}>Adivasi Vikas Bhavan</h2>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <ErrorBoundary fallback={null}>
-            <LiveStatusBadge currentCitizen={currentCitizen} meetings={meetings} />
-          </ErrorBoundary>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.12)", borderRadius: 99, padding: "8px 16px" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ADE80", animation: "pulse-ring 1.8s ease infinite", display: "inline-block" }} />
-            <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>Live Dashboard</span>
-          </div>
-          <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 16px" }}>
-            <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
-              {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
-            </p>
-          </div>
+          {!isMobileView && (
+            <ErrorBoundary fallback={null}>
+              <LiveStatusBadge currentCitizen={currentCitizen} meetings={meetings} />
+            </ErrorBoundary>
+          )}
+          {!isMobileView && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.12)", borderRadius: 99, padding: "8px 16px" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ADE80", animation: "pulse-ring 1.8s ease infinite", display: "inline-block" }} />
+              <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>Live Dashboard</span>
+            </div>
+          )}
+          {!isMobileView && (
+            <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 16px" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
+                {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            </div>
+          )}
           {onLogout && (
             <MDLogoutButton onClick={onLogout} />
           )}
@@ -1441,7 +1469,7 @@ export default function MDDashboard({ onLogout }) {
         </div>
       </div>
 
-      <div style={{ padding: "32px 36px 48px", animation: "fadeSlideUp 0.4s ease" }}>
+      <div style={{ padding: isMobileView ? "16px 14px 48px" : "32px 36px 48px", animation: "fadeSlideUp 0.4s ease" }}>
 
         {/* ── MOBILE VIEW ───────────────────────────────────────────────────── */}
         {isMobileView ? (
