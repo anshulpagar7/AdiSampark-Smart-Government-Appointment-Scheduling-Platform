@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import tribalLogo from "../../assets/tribal-logo.jpg";
 import tdcLogo from "../../assets/tdc-logo.jpeg";
@@ -9,6 +9,21 @@ export default function MDLogin({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // ── Responsive: single-column mobile layout below 768px ──
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768
+  );
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    onResize();
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
 
   const handleLogin = async () => {
     setError("");
@@ -41,8 +56,24 @@ export default function MDLogin({ onLogin }) {
   };
 
   return (
-    <div style={styles.page}>
-      {/* Left panel */}
+    <div style={{ ...styles.page, flexDirection: isMobile ? "column" : "row" }}>
+
+      {/* ── Mobile brand header (mobile only) ── */}
+      {isMobile && (
+        <div style={styles.mobileBrand}>
+          <div style={styles.mobileLogoRow}>
+            <div style={styles.mobileLogoCircle}><img src={tribalLogo} alt="Tribal Logo" style={styles.logoImg} /></div>
+            <div style={styles.mobileLogoCircle}><img src={tdcLogo} alt="TDC Logo" style={styles.logoImg} /></div>
+            <div style={styles.mobileLogoCircle}><img src={commissionerLogo} alt="Commissioner Logo" style={styles.logoImg} /></div>
+          </div>
+          <h1 style={styles.mobileBrandName}>ADI SAMPARK</h1>
+          <p style={styles.mobileBrandTagline}>Smart Appointment Portal</p>
+          <p style={styles.mobileOrgName}>Maharashtra State Cooperative Tribal Development Corporation Ltd.</p>
+        </div>
+      )}
+
+      {/* Left panel (desktop only) */}
+      {!isMobile && (
       <div style={styles.leftPanel}>
         <div style={styles.leftContent}>
           <div style={styles.logoBlock}>
@@ -76,10 +107,11 @@ export default function MDLogin({ onLogin }) {
           Government of Maharashtra &nbsp;•&nbsp; Official System
         </div>
       </div>
+      )}
 
       {/* Right panel */}
-      <div style={styles.rightPanel}>
-        <div style={styles.loginCard}>
+      <div style={{ ...styles.rightPanel, padding: isMobile ? "24px 16px 32px" : "40px" }}>
+        <div style={{ ...styles.loginCard, padding: isMobile ? "30px 22px" : "44px 40px", borderRadius: isMobile ? "20px" : "24px" }}>
           <div style={styles.loginHeader}>
             <div style={styles.loginBadge}>MD LOGIN</div>
             <h2 style={styles.loginTitle}>Welcome Madam</h2>
@@ -304,4 +336,53 @@ const styles = {
     letterSpacing: "0.5px",
   },
   rightFooter: { marginTop: "32px", fontSize: "12px", color: "#CBD5E1", textAlign: "center" },
+
+  // ── Mobile-only brand header ──
+  mobileBrand: {
+    background: "linear-gradient(160deg, #1E3A8A 0%, #2563EB 70%, #1d4ed8 100%)",
+    padding: "28px 20px 26px",
+    textAlign: "center",
+  },
+  mobileLogoRow: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "12px",
+    marginBottom: "14px",
+  },
+  mobileLogoCircle: {
+    width: "52px",
+    height: "52px",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.15)",
+    border: "2px solid rgba(255,255,255,0.3)",
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mobileBrandName: {
+    color: "#fff",
+    fontSize: "24px",
+    fontWeight: "900",
+    margin: "0 0 4px",
+    letterSpacing: "0.5px",
+  },
+  mobileBrandTagline: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: "11px",
+    fontWeight: "600",
+    margin: "0 0 10px",
+    letterSpacing: "1.5px",
+    textTransform: "uppercase",
+  },
+  mobileOrgName: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: "12px",
+    fontWeight: "600",
+    margin: 0,
+    lineHeight: "1.4",
+    maxWidth: "320px",
+    marginLeft: "auto",
+    marginRight: "auto",
+  },
 };
