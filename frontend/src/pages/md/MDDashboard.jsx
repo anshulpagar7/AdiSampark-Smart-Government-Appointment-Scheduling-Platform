@@ -958,7 +958,16 @@ export default function MDDashboard({ onLogout }) {
   const [deviceIsMobile, setDeviceIsMobile] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768
   );
-  const [viewOverride, setViewOverride] = useState(null);
+  // Initialise from the interface chosen on the login page.
+  // "desktop" -> desktop view; anything else (or missing) -> mobile (default).
+  const [viewOverride, setViewOverride] = useState(() => {
+    try {
+      const pref = sessionStorage.getItem("md_view_pref");
+      if (pref === "desktop") return false; // desktop interface
+      if (pref === "mobile")  return true;  // mobile interface
+    } catch { /* ignore */ }
+    return true; // default: mobile
+  });
 
   useEffect(() => {
     const onResize = () => setDeviceIsMobile(window.innerWidth < 768);
@@ -975,7 +984,10 @@ export default function MDDashboard({ onLogout }) {
   const setIsMobileView = (updater) =>
     setViewOverride(prev => {
       const current = prev !== null ? prev : deviceIsMobile;
-      return typeof updater === "function" ? updater(current) : updater;
+      const next = typeof updater === "function" ? updater(current) : updater;
+      // Keep the stored preference in sync so a refresh stays on the same view
+      try { sessionStorage.setItem("md_view_pref", next ? "mobile" : "desktop"); } catch { /* ignore */ }
+      return next;
     });
 
   // ── Current Citizen timer state ───────────────────────────────────────────
