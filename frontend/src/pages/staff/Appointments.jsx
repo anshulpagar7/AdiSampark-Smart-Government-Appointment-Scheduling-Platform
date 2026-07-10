@@ -292,11 +292,14 @@ export default function Appointments() {
       for (const appt of appointments) {
         if (appt.status !== "In Cabin") continue;
 
-        const startMin = parseTimeToMinutes(appt.appointment_time);
-        let endMin = parseTimeToMinutes(appt.appointment_end_time);
-        if (endMin === null && startMin !== null) {
-          endMin = startMin + (appt.appointment_duration ?? 10);
-        }
+        const startMin  = parseTimeToMinutes(appt.appointment_time);
+        const storedEnd = parseTimeToMinutes(appt.appointment_end_time);
+        // Effective end = latest of stored end time and start + duration, so an
+        // MD "Extend 5 Minutes" (which bumps duration only) is honoured here too.
+        const byDuration =
+          startMin !== null ? startMin + (Number(appt.appointment_duration) || 10) : null;
+        let endMin = Math.max(storedEnd ?? -1, byDuration ?? -1);
+        if (endMin < 0) endMin = null;
 
         const key = `${appt.id}-${appt.status}`;
         if (endMin !== null && now >= endMin && !autoTransitionedRef.current.has(key)) {
