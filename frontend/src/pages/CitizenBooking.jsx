@@ -44,6 +44,22 @@ function slotToMinutes(slotStr) {
   return h * 60 + min;
 }
 
+function minutesToSlot(totalMin) {
+  let h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+/** "12:00 PM" + 10 → "12:10 PM" (same format ScheduleAppointment stores) */
+function computeEndTime(startSlot, durationMinutes) {
+  const start = slotToMinutes(startSlot);
+  if (start < 0) return null;
+  return minutesToSlot(start + durationMinutes);
+}
+
 function getOccupiedSlots(startSlot, durationMinutes) {
   const slotsNeeded = durationMinutes / 5;
   const startIdx = ALL_SLOTS.indexOf(startSlot);
@@ -602,6 +618,7 @@ export default function CitizenBooking() {
     setSubmitting(true);
 
     const bookingDate = appointmentType === "today" ? todayStr : selectedDate;
+    const endTime     = computeEndTime(selectedSlot, appointmentDuration);
 
     const { data: insertedRow, error } = await supabase
       .from("appointments")
@@ -612,6 +629,7 @@ export default function CitizenBooking() {
         purpose:              selectedPurpose,
         appointment_date:     bookingDate,
         appointment_time:     selectedSlot,
+        appointment_end_time: endTime,
         appointment_duration: appointmentDuration,
         officer_name:         OFFICER.name,
         location:             arrivingFrom,
@@ -634,11 +652,12 @@ export default function CitizenBooking() {
       purpose:              selectedPurpose,
       appointment_date:     bookingDate,
       appointment_time:     selectedSlot,
+      appointment_end_time: endTime,
       appointment_duration: appointmentDuration,
       officer_name:         OFFICER.name,
       location:             arrivingFrom,
       mobile,
-      notes,
+      notes:                notes?.trim() ? notes.trim() : null,
     });
 
     // Persist google_event_id back into the row so staff can update/delete later
