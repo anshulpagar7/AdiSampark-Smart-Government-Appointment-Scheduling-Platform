@@ -287,26 +287,39 @@ export default function Appointments() {
       const now = nowMinutes();
       const toTransition = [];
 
+      // ── Pass 1: auto-END — complete anyone whose time is finished ──────────
+      let cabinOccupied = false;
       for (const appt of appointments) {
-        const key = `${appt.id}-${appt.status}`;
-        if (autoTransitionedRef.current.has(key)) continue;
+        if (appt.status !== "In Cabin") continue;
 
         const startMin = parseTimeToMinutes(appt.appointment_time);
-        if (startMin === null) continue;
-
-        if (appt.status === "Waiting" && now >= startMin) {
-          toTransition.push({ appt, newStatus: "In Cabin", key });
-          continue;
+        let endMin = parseTimeToMinutes(appt.appointment_end_time);
+        if (endMin === null && startMin !== null) {
+          endMin = startMin + (appt.appointment_duration ?? 10);
         }
 
-        if (appt.status === "In Cabin") {
-          // Compute end minutes
-          let endMin = parseTimeToMinutes(appt.appointment_end_time);
-          if (endMin === null) {
-            endMin = startMin + (appt.appointment_duration ?? 10);
-          }
-          if (now >= endMin) {
-            toTransition.push({ appt, newStatus: "Completed", key });
+        const key = `${appt.id}-${appt.status}`;
+        if (endMin !== null && now >= endMin && !autoTransitionedRef.current.has(key)) {
+          toTransition.push({ appt, newStatus: "Completed", key });
+        } else {
+          cabinOccupied = true; // will still be in the cabin after this tick
+        }
+      }
+
+      // ── Pass 2: auto-APPROVE — admit the next due citizen (one at a time,
+      //    only when the cabin is free — same rule as the manual button) ─────
+      if (!cabinOccupied) {
+        const due = appointments
+          .filter(a => a.status === "Waiting")
+          .map(a => ({ a, start: parseTimeToMinutes(a.appointment_time) }))
+          .filter(x => x.start !== null && now >= x.start)
+          .sort((x, y) => x.start - y.start);
+
+        if (due.length > 0) {
+          const next = due[0].a;
+          const key = `${next.id}-${next.status}`;
+          if (!autoTransitionedRef.current.has(key)) {
+            toTransition.push({ appt: next, newStatus: "In Cabin", key });
           }
         }
       }
@@ -327,8 +340,8 @@ export default function Appointments() {
           continue;
         }
 
-        // Sync calendar on auto-completion
-        if (newStatus === "Completed" && appt.google_event_id) {
+        // Sync calendar on auto transitions (same as manual status changes)
+        if ((newStatus === "Completed" || newStatus === "In Cabin") && appt.google_event_id) {
           syncCalendarUpdate({
             google_event_id:      appt.google_event_id,
             appointment_id:       appt.appointment_id,
