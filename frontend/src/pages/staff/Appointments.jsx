@@ -269,7 +269,14 @@ export default function Appointments() {
 
     if (error) { console.log(error); return; }
 
-    setAppointments(data);
+    // Numeric time sort — appointment_time is text ("01:00 PM"), so the DB's
+    // alphabetical order puts 01:00 PM before 12:00 PM. Sort by real minutes.
+    const sorted = [...(data ?? [])].sort(
+      (a, b) =>
+        (parseTimeToMinutes(a.appointment_time) ?? 1e9) -
+        (parseTimeToMinutes(b.appointment_time) ?? 1e9)
+    );
+    setAppointments(sorted);
     const cabin = data.find(a => a.status === "In Cabin");
     setCabinCitizen(cabin || null);
   }, [selectedDate]);
