@@ -53,7 +53,11 @@ function isMeetLinkValid(link) {
 }
 
 function sortByTime(arr, key) {
-  return [...arr].sort((a, b) => (a[key] ?? "").localeCompare(b[key] ?? ""));
+  // Numeric time sort — the columns store text like "01:00 PM", and a plain
+  // localeCompare puts "01:00 PM" before "12:00 PM". Parse to minutes instead.
+  return [...arr].sort(
+    (a, b) => parseTimeToMinutes(a[key] ?? "") - parseTimeToMinutes(b[key] ?? "")
+  );
 }
 
 function parseTimeToMinutes(timeStr) {
@@ -1068,7 +1072,7 @@ export default function MDDashboard({ onLogout }) {
       console.error("[MDDashboard] appointments fetch error:", apptRes.error);
     } else {
       console.log(`[MDDashboard] today appointments (${currentToday}):`, apptRes.data?.length ?? 0, apptRes.data);
-      setAppointments(apptRes.data ?? []);
+      setAppointments(sortByTime(apptRes.data ?? [], "appointment_time"));
     }
 
     if (meetRes.error) {
@@ -1116,7 +1120,7 @@ export default function MDDashboard({ onLogout }) {
       setTimelineError(`Could not load appointments: ${apptRes.error.message}`);
     } else {
       console.log(`[Timeline] appointments for ${dateStr}:`, apptRes.data?.length ?? 0, apptRes.data);
-      setTimelineAppts(apptRes.data ?? []);
+      setTimelineAppts(sortByTime(apptRes.data ?? [], "appointment_time"));
     }
 
     if (meetRes.error) {
