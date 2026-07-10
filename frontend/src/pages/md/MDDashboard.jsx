@@ -4,6 +4,7 @@ import tdcLogo          from "../../assets/tdc-logo.jpeg";
 import commissionerLogo from "../../assets/Commissioner.jpeg";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
+import { syncCalendarUpdate } from "../../lib/calendarSync";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,13 +58,20 @@ function sortByTime(arr, key) {
 
 function parseTimeToMinutes(timeStr) {
   if (!timeStr) return 0;
-  const s = timeStr.trim();
-  if (s.includes("AM") || s.includes("PM")) {
-    const d = new Date(`1970-01-01 ${s}`);
-    return d.getHours() * 60 + d.getMinutes();
+  const s = String(timeStr).trim();
+  // Manual parse — new Date("1970-01-01 12:30 PM") returns Invalid Date on
+  // iOS Safari / some mobile browsers, which made every time computation NaN.
+  const ampm = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i.exec(s);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const min = parseInt(ampm[2], 10);
+    const period = ampm[3].toUpperCase();
+    if (period === "PM" && h !== 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+    return h * 60 + min;
   }
   const [h, m] = s.split(":").map(Number);
-  return h * 60 + (m || 0);
+  return (h || 0) * 60 + (m || 0);
 }
 
 function nowMinutes() {
@@ -1282,6 +1290,110 @@ export default function MDDashboard({ onLogout }) {
   const handleTimeOverDismiss = () => {
     closeTimeOverPopup(true);
   };
+
+  // ── Auto-status engine (runs on the dashboard itself) ─────────────────────
+  // Mirrors the Appointments-page engine so statuses advance even when only
+  // the MD Dashboard is open:
+  //   • auto-END: "In Cabin" → "Completed" once the time is over, with a
+  //     2-minute grace window so the Time-Over popup / ⏱ Extend stays usable.
+  //   • auto-APPROVE: earliest due "Waiting" citizen → "In Cabin", one at a
+  //     time, only when the cabin is free (same rule as the manual buttons).
+  const autoEngineRef = useRef(new Set());
+  const AUTO_END_GRACE_MIN = 2;
+
+  useEffect(() => {
+    async function runAutoEngine() {
+      const todayLocal = getTodayLocalDate();
+      const now = nowMinutes();
+      const todays = appointments.filter(a => a.appointment_date === todayLocal);
+      if (todays.length === 0) return;
+
+      const toTransition = [];
+
+      // Pass 1 — auto-END (effective end = latest of stored end time and
+      // start + duration, so ⏱ Extend — which bumps duration — is honoured;
+      // local not-yet-fetched extensions are added on top).
+      let cabinOccupied = false;
+      for (const a of todays) {
+        if (a.status !== "In Cabin") continue;
+
+        const startMin  = a.appointment_time ? parseTimeToMinutes(a.appointment_time) : null;
+        const storedEnd = a.appointment_end_time ? parseTimeToMinutes(a.appointment_end_time) : null;
+        const byDuration =
+          startMin !== null && a.appointment_duration
+            ? startMin + Number(a.appointment_duration)
+            : null;
+
+        let endMin = Math.max(storedEnd ?? -1, byDuration ?? -1);
+        if (endMin < 0) { cabinOccupied = true; continue; }
+        endMin += extensions[a.id ?? a.appointment_id] || 0;
+
+        const key = `${a.id}-auto-Completed`;
+        if (now >= endMin + AUTO_END_GRACE_MIN && !autoEngineRef.current.has(key)) {
+          toTransition.push({ appt: a, newStatus: "Completed", key });
+        } else {
+          cabinOccupied = true; // still in the cabin after this tick
+        }
+      }
+
+      // Pass 2 — auto-APPROVE next due citizen when the cabin is free.
+      if (!cabinOccupied) {
+        const due = todays
+          .filter(a => a.status === "Waiting")
+          .map(a => ({ a, start: parseTimeToMinutes(a.appointment_time) }))
+          .filter(x => x.start > 0 && now >= x.start)
+          .sort((x, y) => x.start - y.start);
+
+        if (due.length > 0) {
+          const next = due[0].a;
+          const key = `${next.id}-auto-InCabin`;
+          if (!autoEngineRef.current.has(key)) {
+            toTransition.push({ appt: next, newStatus: "In Cabin", key });
+          }
+        }
+      }
+
+      if (toTransition.length === 0) return;
+
+      for (const { appt, newStatus, key } of toTransition) {
+        autoEngineRef.current.add(key);
+        const { error } = await supabase
+          .from("appointments")
+          .update({ status: newStatus })
+          .eq("id", appt.id);
+
+        if (error) {
+          console.error("[MDDashboard AutoEngine] update failed:", error);
+          autoEngineRef.current.delete(key); // retry on a later tick
+          continue;
+        }
+
+        // Keep Google Calendar in step (same payload as the staff page)
+        if (appt.google_event_id) {
+          syncCalendarUpdate({
+            google_event_id:      appt.google_event_id,
+            appointment_id:       appt.appointment_id,
+            citizen_name:         appt.citizen_name,
+            purpose:              appt.purpose,
+            appointment_date:     appt.appointment_date,
+            appointment_time:     appt.appointment_time,
+            appointment_end_time: appt.appointment_end_time,
+            appointment_duration: appt.appointment_duration,
+            officer_name:         appt.officer_name,
+            mobile:               appt.mobile,
+            location:             appt.location,
+          }).catch(e => console.error("[MDDashboard AutoEngine] calendar sync:", e));
+        }
+      }
+
+      fetchAll();
+    }
+
+    runAutoEngine();
+    const t = setInterval(runAutoEngine, 30000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments, extensions]);
 
   // Completes the appointment shown in the generic popup (appointment-type).
   // Restored: it is referenced by <Popup onComplete={...}> and its absence threw
