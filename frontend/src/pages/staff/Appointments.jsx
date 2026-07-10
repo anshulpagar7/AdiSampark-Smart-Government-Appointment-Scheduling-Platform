@@ -438,6 +438,15 @@ export default function Appointments() {
   // ── Realtime: refresh whenever appointments change in any tab/device ──
   useRealtime("appointments", fetchAppointments);
 
+  // ── Safety-net auto-refresh ────────────────────────────────────────────────
+  // Realtime pushes changes instantly, but if the channel drops (tab sleep,
+  // network blip, Realtime disabled on the table) the list would go stale.
+  // A 30s poll guarantees freshness — same cadence as the MD Dashboard.
+  useEffect(() => {
+    const t = setInterval(fetchAppointments, 30000);
+    return () => clearInterval(t);
+  }, [fetchAppointments]);
+
   const filtered = appointments.filter(a => {
     const matchSearch =
       (a.citizen_name || "").toLowerCase().includes(search.toLowerCase()) ||
