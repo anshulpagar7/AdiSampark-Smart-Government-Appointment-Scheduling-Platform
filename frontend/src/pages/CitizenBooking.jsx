@@ -220,6 +220,22 @@ function Card({ children, style = {} }) {
   );
 }
 
+function BackButton({ onClick, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "none", border: "none", cursor: "pointer",
+        color: "#2563EB", fontSize: 14, fontWeight: 700,
+        padding: "0 0 14px", display: "inline-flex", alignItems: "center",
+        fontFamily: "inherit",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function StepHeading({ children }) {
   return (
     <h2 style={{ fontSize: 22, fontWeight: 700, color: "#111827", marginBottom: 20, marginTop: 0 }}>
@@ -654,6 +670,11 @@ export default function CitizenBooking() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
 
+  function goBack() {
+    if (step === 5) { setStep(appointmentType === "future" ? 4 : 3); return; }
+    if (step > 0) setStep(step - 1);
+  }
+
   function handlePurposeContinue() {
     if (!selectedPurpose.trim()) return;
     setStep(3);
@@ -752,6 +773,7 @@ export default function CitizenBooking() {
       {/* ── STEP 1: Appointment Type ── */}
       {step === 1 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>{t.chooseType}</StepHeading>
           <OfficerBadge t={t} />
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -791,6 +813,7 @@ export default function CitizenBooking() {
       {/* ── STEP 2: Purpose ── */}
       {step === 2 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>{t.purpose}</StepHeading>
           <OfficerBadge t={t} />
           <textarea
@@ -815,6 +838,7 @@ export default function CitizenBooking() {
       {/* ── STEP 3: Duration ── */}
       {step === 3 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>How much meeting time do you require?</StepHeading>
           <OfficerBadge t={t} />
 
@@ -865,6 +889,7 @@ export default function CitizenBooking() {
       {/* ── STEP 4: Date (Future only) ── */}
       {step === 4 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>{t.selectDate}</StepHeading>
           <OfficerBadge t={t} />
           <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
@@ -908,6 +933,7 @@ export default function CitizenBooking() {
       {/* ── STEP 5: Time Slot ── */}
       {step === 5 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>{t.selectSlot}</StepHeading>
           <OfficerBadge t={t} />
 
@@ -1044,6 +1070,7 @@ export default function CitizenBooking() {
       {/* ── STEP 6: Personal Details ── */}
       {step === 6 && (
         <Card>
+          <BackButton onClick={goBack} label={t.back} />
           <StepHeading>{t.details}</StepHeading>
           <OfficerBadge t={t} />
 
@@ -1089,7 +1116,7 @@ export default function CitizenBooking() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Arriving From</label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>{t.arrivingFrom}</label>
             <input
               type="text"
               style={{
@@ -1097,7 +1124,7 @@ export default function CitizenBooking() {
                 border: "1.5px solid #D1D5DB", fontSize: 15, color: "#111827",
                 outline: "none", boxSizing: "border-box", fontFamily: "inherit",
               }}
-              placeholder="Enter your city, village or area"
+              placeholder={t.arrivingFromPlaceholder}
               value={arrivingFrom}
               onChange={(e) => setArrivingFrom(e.target.value)}
               onFocus={(e) => (e.target.style.borderColor = "#2563EB")}
@@ -1220,7 +1247,7 @@ export default function CitizenBooking() {
                 <div style={conf.row}>
                   <span style={conf.rowIcon}>📍</span>
                   <div>
-                    <p style={conf.rowLabel}>Arriving From</p>
+                    <p style={conf.rowLabel}>{t.arrivingFrom}</p>
                     <p style={conf.rowValue}>{arrivingFrom}</p>
                   </div>
                 </div>
