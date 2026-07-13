@@ -96,6 +96,46 @@ function timeToMinutes(slotStr) {
   return slotToMinutes(slotStr);
 }
 
+/** Parse a meeting time that may be "01:00 PM" or "13:00" → minutes since midnight. */
+function meetingTimeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const s = String(timeStr).trim();
+  const ampm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(s);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = parseInt(ampm[2], 10);
+    const p = ampm[3].toUpperCase();
+    if (p === "PM" && h !== 12) h += 12;
+    if (p === "AM" && h === 12) h = 0;
+    return h * 60 + m;
+  }
+  const parts = s.split(":");
+  if (parts.length >= 2) return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  return null;
+}
+
+/**
+ * Build the set of 5-minute slot labels that fall inside any active VC window.
+ * A slot is blocked if [slotStart, slotStart+5) overlaps [meetingStart, meetingEnd).
+ * Cancelled meetings are ignored by the caller (filtered before this runs).
+ */
+function buildVcBlockedSet(meetings) {
+  const blocked = new Set();
+  for (const m of meetings) {
+    const mStart = meetingTimeToMinutes(m.meeting_time);
+    const mEnd   = meetingTimeToMinutes(m.meeting_end_time);
+    if (mStart === null || mEnd === null) continue;
+    for (const slot of ALL_SLOTS) {
+      const sStart = slotToMinutes(slot);
+      if (sStart < 0) continue;
+      const sEnd = sStart + 5;
+      // interval overlap
+      if (sStart < mEnd && sEnd > mStart) blocked.add(slot);
+    }
+  }
+  return blocked;
+}
+
 // ─── Holiday: Office Closed Card ─────────────────────────────────────────────
 
 function OfficeClosedCard({ reason, dateStr }) {
@@ -425,6 +465,7 @@ export default function CitizenBooking() {
   const [tourDiary, setTourDiary] = useState([]);
 
   const [bookedAppointments, setBookedAppointments] = useState([]);
+  const [executiveMeetings, setExecutiveMeetings] = useState([]);
   const [queuePosition, setQueuePosition] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
@@ -493,6 +534,16 @@ export default function CitizenBooking() {
         .select("id, start_date, end_date, destination, purpose, status")
         .neq("status", "Cancelled")
         .then(({ data, error }) => { if (!error && data) setTourDiary(data); });
+    },
+    // ── NEW: realtime for executive_meetings (VC blocks citizen slots) ─────
+    executive_meetings: () => {
+      if (!effectiveDateStr) return;
+      supabase
+        .from("executive_meetings")
+        .select("id, meeting_time, meeting_end_time, meeting_date, status")
+        .eq("meeting_date", effectiveDateStr)
+        .neq("status", "Cancelled")
+        .then(({ data, error }) => { if (!error && data) setExecutiveMeetings(data); });
     },
   });
 
@@ -582,8 +633,34 @@ export default function CitizenBooking() {
     return () => { cancelled = true; clearInterval(poll); };
   }, [effectiveDateStr]);
 
+  // ── Fetch executive meetings (VCs) for the effective date ─────────────────
+  // A VC blocks its overlapping slots for NEW citizen bookings (shown purple as
+  // "Ongoing VC"). Already-booked citizens are unaffected — they stay in the
+  // waiting queue and complete normally.
+  useEffect(() => {
+    if (!effectiveDateStr) { setExecutiveMeetings([]); return; }
+    let cancelled = false;
+    async function fetchMeetings() {
+      const { data, error } = await supabase
+        .from("executive_meetings")
+        .select("id, meeting_time, meeting_end_time, meeting_date, status")
+        .eq("meeting_date", effectiveDateStr)
+        .neq("status", "Cancelled");
+      if (cancelled) return;
+      if (!error && data) setExecutiveMeetings(data);
+      else setExecutiveMeetings([]);
+    }
+    fetchMeetings();
+    // Fast poll so a newly-added VC blocks slots quickly even if realtime drops.
+    const poll = setInterval(fetchMeetings, 15000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [effectiveDateStr]);
+
   // ── Derived occupied slots set ────────────────────────────────────────────
   const occupiedSlots = buildOccupiedSet(bookedAppointments);
+
+  // ── Derived VC-blocked slots set ──────────────────────────────────────────
+  const vcBlockedSlots = buildVcBlockedSet(executiveMeetings);
 
   // ── Today past-time filter ────────────────────────────────────────────────
   const isToday =
@@ -595,10 +672,12 @@ export default function CitizenBooking() {
 
   function getSlotStatus(slotStr) {
     if (isToday && timeToMinutes(slotStr) <= currentMinutes) return "past";
+    if (vcBlockedSlots.has(slotStr)) return "vc";
     if (occupiedSlots.has(slotStr)) return "booked";
     const run = getOccupiedSlots(slotStr, appointmentDuration);
     if (!run) return "too-short";
     for (const s of run) {
+      if (vcBlockedSlots.has(s)) return "run-blocked";
       if (occupiedSlots.has(s)) return "run-blocked";
     }
     return "available";
@@ -1426,6 +1505,10 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
           bg = "#DBEAFE"; border = "#93C5FD"; color = "#1E3A8A"; fontWeight = 700;
           shadow = "none"; scale = "scale(1.03)"; opacity = 1;
           sublabel = <span style={{ display:"block", fontSize:9, color:"#2563EB", fontWeight:700, marginTop:2 }}>✓</span>;
+        } else if (status === "vc") {
+          bg = "#F3E8FF"; border = "#D8B4FE"; color = "#7E22CE"; fontWeight = 600;
+          shadow = "none"; scale = "scale(1)"; opacity = 1;
+          sublabel = <span style={{ display:"block", fontSize:9, color:"#9333EA", fontWeight:700, marginTop:2 }}>Ongoing VC</span>;
         } else if (status === "booked") {
           bg = "#FEE2E2"; border = "#FECACA"; color = "#9CA3AF"; fontWeight = 500;
           shadow = "none"; scale = "scale(1)"; opacity = 1;
@@ -1448,9 +1531,10 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
             disabled={!isClickable}
             title={
               status === "past"        ? "This time has already passed" :
+              status === "vc"          ? "Ongoing VC — this time is reserved for an executive video conference" :
               status === "booked"      ? "Already booked" :
               status === "too-short"   ? `Need ${appointmentDuration} consecutive minutes — not enough room here` :
-              status === "run-blocked" ? "A slot in this time range is already booked" :
+              status === "run-blocked" ? "A slot in this time range is already booked or reserved for a VC" :
               ""
             }
             style={{
