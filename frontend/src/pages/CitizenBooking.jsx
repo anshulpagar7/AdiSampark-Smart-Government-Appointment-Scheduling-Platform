@@ -10,7 +10,7 @@ import { syncCalendarCreate } from "../lib/calendarSync";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const OFFICER = { name: "Leena Bansod", designation: "Commissioner / Managing Director / IAS" };
+const OFFICER = { name: "Leena Bansod", designation: "Commissioner / Managing Director" };
 
 const TOTAL_STEPS = 6;
 
