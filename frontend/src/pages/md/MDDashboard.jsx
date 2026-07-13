@@ -4,7 +4,7 @@ import tdcLogo          from "../../assets/tdc-logo.jpeg";
 import commissionerLogo from "../../assets/Commissioner.jpeg";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
-import { syncCalendarUpdate } from "../../lib/calendarSync";
+import { syncCalendarCreate, syncCalendarUpdate, syncCalendarDelete } from "../../lib/calendarSync";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -81,6 +81,32 @@ function parseTimeToMinutes(timeStr) {
 function nowMinutes() {
   const n = new Date();
   return n.getHours() * 60 + n.getMinutes();
+}
+
+// Convert an <input type="time"> value ("14:30" or "09:05") into the "hh:mm AM/PM"
+// string the app stores in Supabase (executive_meetings.meeting_time etc.).
+// Passing through an already-formatted "02:30 PM" value returns it unchanged.
+function to12h(value) {
+  if (!value) return "";
+  const s = String(value).trim();
+  if (/AM|PM/i.test(s)) return s; // already 12h
+  const m = /^(\d{1,2}):(\d{2})/.exec(s);
+  if (!m) return s;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const period = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${min} ${period}`;
+}
+
+// Convert a stored "02:30 PM" string back to an <input type="time"> value "14:30".
+function to24h(value) {
+  if (!value) return "";
+  const mins = parseTimeToMinutes(value);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function formatDateRange(start, end) {
@@ -344,40 +370,102 @@ function TodayTimeline({ appointments, meetings, isToday = true }) {
 
   const statusColor = { "Completed": "#059669", "In Cabin": "#2563EB", "Waiting": "#D97706", "Cancelled": "#DC2626" };
 
+  // ── Overlap clustering ────────────────────────────────────────────────────
+  // Give every event an end minute (stored end, else +duration, else +5) then
+  // group events whose intervals intersect. A cluster with 2+ members is drawn
+  // as side-by-side split cards on a single timeline node; breaks/lunch are
+  // ambient and never pulled into a split.
+  const withRange = events.map(ev => {
+    const start = ev.minutes;
+    let end;
+    if (ev.endTime) end = parseTimeToMinutes(ev.endTime);
+    else if (ev.duration) end = start + Number(ev.duration);
+    else end = start + 5;
+    return { ...ev, _start: start, _end: end };
+  });
+
+  const splittable = ev => ev.type === "appointment" || ev.type === "meeting";
+
+  const clusters = [];       // array of arrays of events
+  let openCluster = null;    // { arr, maxEnd }
+  for (const ev of withRange) {
+    if (!splittable(ev)) {
+      clusters.push([ev]);
+      openCluster = null;
+      continue;
+    }
+    if (openCluster && ev._start < openCluster.maxEnd) {
+      openCluster.arr.push(ev);
+      openCluster.maxEnd = Math.max(openCluster.maxEnd, ev._end);
+    } else {
+      const arr = [ev];
+      clusters.push(arr);
+      openCluster = { arr, maxEnd: ev._end };
+    }
+  }
+
+  function renderCard(ev, idx, splitMode) {
+    const cfg = typeConfig[ev.type] || typeConfig.appointment;
+    const isPast = ev.minutes < now;
+    return (
+      <div
+        key={idx}
+        style={{
+          flex: splitMode ? 1 : undefined,
+          minWidth: 0,
+          background: isPast && ev.type === "appointment" && ev.status === "Completed" ? "#F0FDF4" : cfg.bg,
+          border: `1px solid ${cfg.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          opacity: isPast && ev.type === "break" ? 0.5 : 1,
+        }}
+      >
+        {splitMode && (
+          <span style={{ display: "inline-block", fontSize: 9, fontWeight: 800, color: cfg.dot, background: "#fff", border: `1px solid ${cfg.border}`, borderRadius: 99, padding: "1px 7px", marginBottom: 6, letterSpacing: "0.04em" }}>
+            ⚠ OVERLAP
+          </span>
+        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>{cfg.icon}</span>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isPast ? "#6B7280" : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.label}</p>
+              {ev.sub && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.sub}</p>}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+            {ev.endTime && <span style={{ fontSize: 10, color: "#6B7280", whiteSpace: "nowrap" }}>→ {ev.endTime?.replace(" PM","").replace(" AM","")}</span>}
+            {ev.duration && <span style={{ fontSize: 10, fontWeight: 700, color: cfg.dot, background: "#fff", padding: "2px 8px", borderRadius: 99, border: `1px solid ${cfg.border}` }}>{ev.duration} min</span>}
+            {ev.status && <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[ev.status] || "#6B7280" }}>{ev.status}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {events.map((ev, idx) => {
-        const cfg = typeConfig[ev.type] || typeConfig.appointment;
-        const isPast = ev.minutes < now;
-        const isCurrent = ev.type === "appointment" && ev.status === "In Cabin";
-        const isLast = idx === events.length - 1;
+      {clusters.map((cluster, cIdx) => {
+        const lead = cluster[0];
+        const cfg = typeConfig[lead.type] || typeConfig.appointment;
+        const isPast = lead.minutes < now;
+        const isCurrent = cluster.length === 1 && lead.type === "appointment" && lead.status === "In Cabin";
+        const isLast = cIdx === clusters.length - 1;
+        const isSplit = cluster.length > 1;
 
         return (
-          <div key={idx} style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
+          <div key={cIdx} style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
             <div style={{ width: 80, flexShrink: 0, paddingTop: 18, textAlign: "right", paddingRight: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: isPast ? "#9CA3AF" : "#374151", whiteSpace: "nowrap" }}>
-                {ev.time?.replace(" PM","").replace(" AM","") || ""}
+                {lead.time?.replace(" PM","").replace(" AM","") || ""}
               </span>
             </div>
             <div style={{ width: 24, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20 }}>
               <div style={{ width: isCurrent ? 14 : 10, height: isCurrent ? 14 : 10, borderRadius: "50%", background: isPast ? "#D1D5DB" : cfg.dot, border: isCurrent ? `3px solid ${cfg.dot}` : "none", boxShadow: isCurrent ? `0 0 0 4px ${cfg.bg}` : "none", flexShrink: 0, zIndex: 1 }} />
               {!isLast && <div style={{ width: 2, flex: 1, background: "#E5E7EB", minHeight: 32, marginTop: 4 }} />}
             </div>
-            <div style={{ flex: 1, margin: "10px 0 10px 10px", background: isPast && ev.type === "appointment" && ev.status === "Completed" ? "#F0FDF4" : cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 12, padding: "12px 16px", opacity: isPast && ev.type === "break" ? 0.5 : 1 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>{cfg.icon}</span>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isPast ? "#6B7280" : "#111827" }}>{ev.label}</p>
-                    {ev.sub && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280" }}>{ev.sub}</p>}
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                  {ev.endTime && <span style={{ fontSize: 10, color: "#6B7280", whiteSpace: "nowrap" }}>→ {ev.endTime?.replace(" PM","").replace(" AM","")}</span>}
-                  {ev.duration && <span style={{ fontSize: 10, fontWeight: 700, color: cfg.dot, background: "#fff", padding: "2px 8px", borderRadius: 99, border: `1px solid ${cfg.border}` }}>{ev.duration} min</span>}
-                  {ev.status && <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[ev.status] || "#6B7280" }}>{ev.status}</span>}
-                </div>
-              </div>
+            <div style={{ flex: 1, minWidth: 0, margin: "10px 0 10px 10px", display: "flex", gap: 10 }}>
+              {cluster.map((ev, i) => renderCard(ev, i, isSplit))}
             </div>
           </div>
         );
@@ -502,7 +590,7 @@ function printTourDiaryMD(tours) {
 
 // ─── Tour Diary Section ───────────────────────────────────────────────────────
 
-function TourDiarySection({ tourDiary }) {
+function TourDiarySection({ tourDiary, onAddTour }) {
   const today = getTodayLocalDate();
 
   const activeTour = tourDiary.find(t => {
@@ -598,12 +686,20 @@ function TourDiarySection({ tourDiary }) {
           <p style={{ margin:0, fontSize:11, fontWeight:700, color:"#6B7280", letterSpacing:"0.08em", textTransform:"uppercase" }}>Personal Record</p>
           <h2 style={{ margin:"2px 0 0", fontSize:20, fontWeight:800, color:"#111827" }}>✈️ Tour Diary</h2>
         </div>
-        <button
-          onClick={() => printTourDiaryMD(tourDiary)}
-          style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#6B1A1A,#9B2226)", color:"#fff", border:"none", padding:"10px 18px", borderRadius:12, fontSize:13, fontWeight:700, cursor:"pointer", boxShadow:"0 4px 12px rgba(107,26,26,0.3)" }}
-        >
-          🖨 Print Tour Diary
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => onAddTour?.()}
+            style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#2563EB,#1E3A8A)", color:"#fff", border:"none", padding:"10px 18px", borderRadius:12, fontSize:13, fontWeight:700, cursor:"pointer", boxShadow:"0 4px 12px rgba(37,99,235,0.3)" }}
+          >
+            ➕ Add Tour
+          </button>
+          <button
+            onClick={() => printTourDiaryMD(tourDiary)}
+            style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#6B1A1A,#9B2226)", color:"#fff", border:"none", padding:"10px 18px", borderRadius:12, fontSize:13, fontWeight:700, cursor:"pointer", boxShadow:"0 4px 12px rgba(107,26,26,0.3)" }}
+          >
+            🖨 Print Tour Diary
+          </button>
+        </div>
       </div>
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
@@ -670,8 +766,9 @@ function TourDiarySection({ tourDiary }) {
 
 // ─── Live Status Badge ────────────────────────────────────────────────────────
 
-function LiveStatusBadge({ currentCitizen, meetings }) {
+function LiveStatusBadge({ currentCitizen, meetings, onCompleteCitizen, onNextCitizen, onExtendCitizen, onCompleteMeeting, hasNextCitizen }) {
   const [tick, setTick] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setTick(s => s + 1), 1000);
@@ -681,10 +778,16 @@ function LiveStatusBadge({ currentCitizen, meetings }) {
   const now = nowMinutes();
   const ongoingMeeting = meetings.find(m => {
     if (!m.meeting_time) return false;
+    if (m.status === "Cancelled" || m.status === "Completed") return false;
     const start = parseTimeToMinutes(m.meeting_time);
     const end   = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : start + 30;
     return now >= start && now <= end;
   }) || null;
+
+  // Shared expand chevron + click behaviour
+  const Chevron = () => (
+    <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.55)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
+  );
 
   if (currentCitizen) {
     let timeRemaining = "—";
@@ -702,9 +805,10 @@ function LiveStatusBadge({ currentCitizen, meetings }) {
 
     return (
       <div style={liveStyles.badge}>
-        <div style={liveStyles.header}>
+        <div style={{ ...liveStyles.header, cursor: "pointer" }} onClick={() => setExpanded(e => !e)}>
           <span style={{ ...liveStyles.dot, background: "#4ADE80", animation: "pulse-ring 1.8s ease infinite" }} />
           <span style={liveStyles.headerLabel}>Meeting in Progress</span>
+          <Chevron />
         </div>
         <div style={liveStyles.divider} />
         <div style={liveStyles.row}>
@@ -717,6 +821,24 @@ function LiveStatusBadge({ currentCitizen, meetings }) {
             <span style={{ ...liveStyles.rowValue, fontFamily: "monospace", fontSize: 16, color: timeRemaining === "00:00" ? "#EF4444" : "#4ADE80", letterSpacing: "0.08em" }}>
               {timeRemaining}
             </span>
+          </div>
+        )}
+        {expanded && (
+          <div style={liveStyles.actionCol}>
+            <button
+              style={{ ...liveStyles.actionBtn, background: "#10B981" }}
+              onClick={() => { onCompleteCitizen?.(currentCitizen); setExpanded(false); }}
+            >✓ Complete</button>
+            {hasNextCitizen && (
+              <button
+                style={{ ...liveStyles.actionBtn, background: "#2563EB" }}
+                onClick={() => { onNextCitizen?.(currentCitizen); setExpanded(false); }}
+              >➡ Next Citizen</button>
+            )}
+            <button
+              style={{ ...liveStyles.actionBtn, background: "rgba(255,255,255,0.14)", color: "#fff" }}
+              onClick={() => { onExtendCitizen?.(currentCitizen); }}
+            >⏱ Extend 5 min</button>
           </div>
         )}
       </div>
@@ -739,9 +861,10 @@ function LiveStatusBadge({ currentCitizen, meetings }) {
 
     return (
       <div style={{ ...liveStyles.badge, border: "1px solid rgba(167,139,250,0.25)", boxShadow: "0 0 0 1px rgba(167,139,250,0.12), 0 0 20px rgba(167,139,250,0.08), inset 0 1px 0 rgba(255,255,255,0.08)" }}>
-        <div style={liveStyles.header}>
+        <div style={{ ...liveStyles.header, cursor: "pointer" }} onClick={() => setExpanded(e => !e)}>
           <span style={{ ...liveStyles.dot, background: "#A78BFA", animation: "pulse-ring 1.8s ease infinite" }} />
           <span style={liveStyles.headerLabel}>Executive Meeting</span>
+          <Chevron />
         </div>
         <div style={liveStyles.divider} />
         <div style={liveStyles.row}>
@@ -758,20 +881,49 @@ function LiveStatusBadge({ currentCitizen, meetings }) {
             </span>
           </div>
         )}
+        {ongoingMeeting.meet_link && (
+          <div style={liveStyles.row}>
+            <span style={liveStyles.rowLabel}>Link</span>
+            <a href={ongoingMeeting.meet_link} target="_blank" rel="noreferrer" style={{ ...liveStyles.rowValue, color: "#A78BFA", textDecoration: "underline", fontSize: 11 }}>Join</a>
+          </div>
+        )}
+        {expanded && (
+          <div style={liveStyles.actionCol}>
+            <button
+              style={{ ...liveStyles.actionBtn, background: "#10B981" }}
+              onClick={() => { onCompleteMeeting?.(ongoingMeeting); setExpanded(false); }}
+            >✓ Complete Meeting</button>
+            {ongoingMeeting.meet_link && (
+              <a
+                href={ongoingMeeting.meet_link} target="_blank" rel="noreferrer"
+                style={{ ...liveStyles.actionBtn, background: "#7C3AED", textDecoration: "none", textAlign: "center", display: "block" }}
+              >🎥 Join Meet</a>
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div style={{ ...liveStyles.badge, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}>
-      <div style={liveStyles.header}>
+      <div style={{ ...liveStyles.header, cursor: "pointer" }} onClick={() => setExpanded(e => !e)}>
         <span style={{ ...liveStyles.dot, background: "#94A3B8" }} />
         <span style={{ ...liveStyles.headerLabel, color: "rgba(255,255,255,0.5)" }}>Cabin Available</span>
+        <Chevron />
       </div>
       <div style={liveStyles.divider} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4px 0" }}>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>No active session</span>
       </div>
+      {expanded && hasNextCitizen && (
+        <div style={liveStyles.actionCol}>
+          <button
+            style={{ ...liveStyles.actionBtn, background: "#2563EB" }}
+            onClick={() => { onNextCitizen?.(null); setExpanded(false); }}
+          >➡ Admit Next Citizen</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -785,6 +937,8 @@ const liveStyles = {
   row:        { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
   rowLabel:   { fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 },
   rowValue:   { fontSize: 13, fontWeight: 700, color: "#fff", textAlign: "right" },
+  actionCol:  { display: "flex", flexDirection: "column", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.1)" },
+  actionBtn:  { border: "none", borderRadius: 9, padding: "8px 10px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer", lineHeight: 1.2 },
 };
 
 // ─── Current Citizen Live Timer + Progress Bar ──────────────────────────────────
@@ -954,6 +1108,426 @@ class ErrorBoundary extends Component {
   }
 }
 
+// ─── Schedule Add Modal (VC / Other) ──────────────────────────────────────────
+// Master "Add" flow for the MD timeline. Step 1 picks a type (VC or Other);
+// step 2 collects fields and inserts into executive_meetings, then syncs to
+// Google Calendar. Overlapping citizen appointments are NOT modified — they stay
+// in the waiting queue (matches the Appointments/ExecutiveMeetings behaviour).
+
+const EMPTY_SCHEDULE = {
+  title: "",
+  meeting_with: "",
+  meeting_date: "",
+  meeting_time: "",
+  meeting_end_time: "",
+  meet_link: "",
+  notes: "",
+  status: "Upcoming",
+};
+
+function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
+  const [step, setStep]   = useState("choose"); // "choose" | "vc" | "other"
+  const [form, setForm]   = useState({ ...EMPTY_SCHEDULE, meeting_date: defaultDate || getTodayLocalDate() });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const isVc = step === "vc";
+
+  function handleChange(e) {
+    setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+    setErrors(er => ({ ...er, [e.target.name]: "" }));
+  }
+
+  function validate() {
+    const e = {};
+    if (!form.title.trim())        e.title = isVc ? "VC title is required" : "Title is required";
+    if (!form.meeting_with.trim()) e.meeting_with = isVc ? "Participants are required" : "With / attendee is required";
+    if (!form.meeting_date)        e.meeting_date = "Date is required";
+    if (!form.meeting_time)        e.meeting_time = "Start time is required";
+    if (!form.meeting_end_time)    e.meeting_end_time = "End time is required";
+    if (form.meeting_time && form.meeting_end_time &&
+        parseTimeToMinutes(to12h(form.meeting_end_time)) <= parseTimeToMinutes(to12h(form.meeting_time))) {
+      e.meeting_end_time = "End time must be after start time";
+    }
+    return e;
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    const e = validate();
+    if (Object.keys(e).length > 0) { setErrors(e); return; }
+    setSaving(true);
+
+    // Normalise times to the "hh:mm AM/PM" string the app stores everywhere.
+    const payload = {
+      title:            form.title.trim(),
+      meeting_with:     form.meeting_with.trim(),
+      meeting_date:     form.meeting_date,
+      meeting_time:     to12h(form.meeting_time),
+      meeting_end_time: to12h(form.meeting_end_time),
+      meet_link:        isVc ? (form.meet_link.trim() || null) : null,
+      notes:            form.notes.trim() || null,
+      status:           form.status,
+    };
+
+    let insertedRow = null;
+    try {
+      const { data, error } = await supabase
+        .from("executive_meetings")
+        .insert([payload])
+        .select()
+        .single();
+      if (error) { console.error("[ScheduleAdd] insert error:", error); alert("Failed to save: " + error.message); setSaving(false); return; }
+      insertedRow = data;
+    } catch (err) {
+      console.error("[ScheduleAdd] insert threw:", err);
+      alert("Failed to save.");
+      setSaving(false);
+      return;
+    }
+
+    // Calendar sync (non-blocking) — same signature ExecutiveMeetings uses.
+    try {
+      const calResult = await syncCalendarCreate({
+        appointment_id:     `MTG-${insertedRow.id}`,
+        meeting_title:      payload.title,
+        meeting_with:       payload.meeting_with,
+        meeting_date:       payload.meeting_date,
+        meeting_start_time: payload.meeting_time,
+        meeting_end_time:   payload.meeting_end_time,
+        meeting_link:       payload.meet_link,
+        notes:              payload.notes,
+      });
+      if (calResult?.google_event_id) {
+        await supabase
+          .from("executive_meetings")
+          .update({ google_event_id: calResult.google_event_id })
+          .eq("id", insertedRow.id);
+      }
+    } catch (calErr) {
+      console.error("[ScheduleAdd] calendar create failed:", calErr);
+    }
+
+    setSaving(false);
+    onSaved?.();
+    onClose?.();
+  }
+
+  const accent = isVc ? "#7C3AED" : "#2563EB";
+
+  return (
+    <div style={mdModal.overlay} onClick={e => { if (e.target === e.currentTarget) onClose?.(); }}>
+      <div style={mdModal.box}>
+        <div style={mdModal.header}>
+          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: "#111827" }}>
+            {step === "choose" ? "Add to Schedule" : isVc ? "🟣 Schedule VC" : "📌 Add Other Item"}
+          </h2>
+          <button onClick={onClose} style={mdModal.close}>✕</button>
+        </div>
+
+        {step === "choose" && (
+          <div style={{ padding: "22px 26px 28px" }}>
+            <p style={{ margin: "0 0 18px", fontSize: 14, color: "#6B7280" }}>What would you like to add to the timeline?</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <button onClick={() => setStep("vc")} style={mdModal.typeCard("#7C3AED", "#F5F3FF", "#DDD6FE")}>
+                <span style={{ fontSize: 30 }}>🎥</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: "#5B21B6" }}>VC</span>
+                <span style={{ fontSize: 11, color: "#7C3AED", textAlign: "center" }}>Video conference with a Google Meet / VC link</span>
+              </button>
+              <button onClick={() => setStep("other")} style={mdModal.typeCard("#2563EB", "#EFF6FF", "#BFDBFE")}>
+                <span style={{ fontSize: 30 }}>📌</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: "#1E3A8A" }}>Other</span>
+                <span style={{ fontSize: 11, color: "#2563EB", textAlign: "center" }}>Any other event, review or block on the calendar</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step !== "choose" && (
+          <>
+            <div style={mdModal.body}>
+              <MdField label={isVc ? "VC Title" : "Title"} error={errors.title} required>
+                <input name="title" value={form.title} onChange={handleChange}
+                  placeholder={isVc ? "e.g. Review with Head Office" : "e.g. Site inspection"}
+                  style={{ ...mdModal.input, borderColor: errors.title ? "#FCA5A5" : "#E2E8F0" }} />
+              </MdField>
+              <MdField label={isVc ? "Participants" : "With / Attendee"} error={errors.meeting_with} required>
+                <input name="meeting_with" value={form.meeting_with} onChange={handleChange}
+                  placeholder={isVc ? "e.g. Project Officers, PWD" : "e.g. District team"}
+                  style={{ ...mdModal.input, borderColor: errors.meeting_with ? "#FCA5A5" : "#E2E8F0" }} />
+              </MdField>
+              <MdField label="Date" error={errors.meeting_date} required>
+                <input type="date" name="meeting_date" value={form.meeting_date} onChange={handleChange}
+                  style={{ ...mdModal.input, borderColor: errors.meeting_date ? "#FCA5A5" : "#E2E8F0" }} />
+              </MdField>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <MdField label="Start Time" error={errors.meeting_time} required>
+                  <input type="time" name="meeting_time" value={form.meeting_time} onChange={handleChange}
+                    style={{ ...mdModal.input, borderColor: errors.meeting_time ? "#FCA5A5" : "#E2E8F0" }} />
+                </MdField>
+                <MdField label="End Time" error={errors.meeting_end_time} required>
+                  <input type="time" name="meeting_end_time" value={form.meeting_end_time} onChange={handleChange}
+                    style={{ ...mdModal.input, borderColor: errors.meeting_end_time ? "#FCA5A5" : "#E2E8F0" }} />
+                </MdField>
+              </div>
+              {isVc && (
+                <MdField label="VC / Meet Link">
+                  <input name="meet_link" value={form.meet_link} onChange={handleChange}
+                    placeholder="https://meet.google.com/..." style={mdModal.input} />
+                </MdField>
+              )}
+              <MdField label="Notes">
+                <textarea name="notes" value={form.notes} onChange={handleChange} rows={3}
+                  placeholder="Agenda or notes…" style={{ ...mdModal.input, resize: "vertical" }} />
+              </MdField>
+            </div>
+            <div style={mdModal.footer}>
+              <button onClick={() => setStep("choose")} style={mdModal.cancelBtn}>← Back</button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ ...mdModal.saveBtn, background: accent, ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>
+                {saving ? "Saving…" : isVc ? "Schedule VC" : "Add Item"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tour Add Modal (MD Dashboard) ─────────────────────────────────────────────
+// Mirrors the TourDiary module's insert shape so both write identical rows.
+
+function TourAddModal({ onClose, onSaved }) {
+  const [form, setForm]   = useState({ destination: "", purpose: "", start_date: "", end_date: "", remarks: "", status: "Upcoming" });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  function handleChange(e) {
+    setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+    setErrors(er => ({ ...er, [e.target.name]: "" }));
+  }
+
+  function computeStatus(start, end, saved) {
+    if (saved === "Cancelled") return "Cancelled";
+    if (!start) return saved || "Upcoming";
+    const today = getTodayLocalDate();
+    const e = end || start;
+    if (today < start) return "Upcoming";
+    if (today >= start && today <= e) return "Ongoing";
+    return "Completed";
+  }
+
+  function daysBetween(start, end) {
+    if (!start) return 1;
+    const a = new Date(start + "T00:00:00");
+    const b = new Date((end || start) + "T00:00:00");
+    return Math.max(1, Math.round((b - a) / 86400000) + 1);
+  }
+
+  function validate() {
+    const e = {};
+    if (!form.destination.trim()) e.destination = "Destination is required";
+    if (!form.purpose.trim())     e.purpose     = "Purpose is required";
+    if (!form.start_date)         e.start_date  = "Start date is required";
+    if (!form.end_date)           e.end_date    = "End date is required";
+    if (form.end_date && form.start_date && form.end_date < form.start_date)
+      e.end_date = "End date cannot be before start date";
+    return e;
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    const e = validate();
+    if (Object.keys(e).length > 0) { setErrors(e); return; }
+    setSaving(true);
+
+    const autoStatus = computeStatus(form.start_date, form.end_date, form.status);
+    const payload = {
+      destination: form.destination.trim(),
+      purpose:     form.purpose.trim(),
+      start_date:  form.start_date,
+      end_date:    form.end_date,
+      remarks:     form.remarks.trim() || null,
+      status:      form.status === "Cancelled" ? "Cancelled" : autoStatus,
+    };
+
+    let insertedRow = null;
+    try {
+      const { data, error } = await supabase.from("tour_diary").insert([payload]).select().single();
+      if (error) { console.error("[TourAdd] insert error:", error); alert("Failed to save: " + error.message); setSaving(false); return; }
+      insertedRow = data;
+    } catch (err) {
+      console.error("[TourAdd] insert threw:", err); alert("Failed to save."); setSaving(false); return;
+    }
+
+    try {
+      const days = daysBetween(form.start_date, form.end_date);
+      const calResult = await syncCalendarCreate({
+        appointment_id:       `TOUR-${insertedRow.id}`,
+        citizen_name:         `✈️ Official Tour — ${form.destination.trim()}`,
+        purpose:              form.purpose.trim(),
+        appointment_date:     form.start_date,
+        appointment_time:     "09:00 AM",
+        appointment_end_time: form.end_date && form.end_date !== form.start_date ? null : "06:00 PM",
+        appointment_duration: days * 9 * 60,
+        officer_name:         "Leena Bansod",
+        location:             form.destination.trim(),
+        mobile:               null,
+        notes: [
+          form.end_date && form.end_date !== form.start_date
+            ? `Tour dates: ${form.start_date} → ${form.end_date} (${days} day${days > 1 ? "s" : ""})`
+            : `Tour date: ${form.start_date}`,
+          form.remarks || null,
+        ].filter(Boolean).join("\n") || null,
+      });
+      if (calResult?.google_event_id) {
+        await supabase.from("tour_diary").update({ google_event_id: calResult.google_event_id }).eq("id", insertedRow.id);
+      }
+    } catch (calErr) {
+      console.error("[TourAdd] calendar create failed:", calErr);
+    }
+
+    setSaving(false);
+    onSaved?.();
+    onClose?.();
+  }
+
+  return (
+    <div style={mdModal.overlay} onClick={e => { if (e.target === e.currentTarget) onClose?.(); }}>
+      <div style={mdModal.box}>
+        <div style={mdModal.header}>
+          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: "#111827" }}>✈️ Add Tour</h2>
+          <button onClick={onClose} style={mdModal.close}>✕</button>
+        </div>
+        <div style={mdModal.body}>
+          <MdField label="Destination" error={errors.destination} required>
+            <input name="destination" value={form.destination} onChange={handleChange} placeholder="e.g. Nashik"
+              style={{ ...mdModal.input, borderColor: errors.destination ? "#FCA5A5" : "#E2E8F0" }} />
+          </MdField>
+          <MdField label="Purpose" error={errors.purpose} required>
+            <input name="purpose" value={form.purpose} onChange={handleChange} placeholder="e.g. District review"
+              style={{ ...mdModal.input, borderColor: errors.purpose ? "#FCA5A5" : "#E2E8F0" }} />
+          </MdField>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <MdField label="Start Date" error={errors.start_date} required>
+              <input type="date" name="start_date" value={form.start_date} onChange={handleChange}
+                style={{ ...mdModal.input, borderColor: errors.start_date ? "#FCA5A5" : "#E2E8F0" }} />
+            </MdField>
+            <MdField label="End Date" error={errors.end_date} required>
+              <input type="date" name="end_date" value={form.end_date} onChange={handleChange}
+                style={{ ...mdModal.input, borderColor: errors.end_date ? "#FCA5A5" : "#E2E8F0" }} />
+            </MdField>
+          </div>
+          <MdField label="Remarks">
+            <textarea name="remarks" value={form.remarks} onChange={handleChange} rows={3} placeholder="Optional notes…"
+              style={{ ...mdModal.input, resize: "vertical" }} />
+          </MdField>
+        </div>
+        <div style={mdModal.footer}>
+          <button onClick={onClose} style={mdModal.cancelBtn}>Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            style={{ ...mdModal.saveBtn, background: "#6B1A1A", ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>
+            {saving ? "Saving…" : "Add Tour"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MdField({ label, error, required, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
+        {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
+      </label>
+      {children}
+      {error && <p style={{ margin: "4px 0 0", color: "#DC2626", fontSize: 12 }}>{error}</p>}
+    </div>
+  );
+}
+
+// ─── Mini month calendar (timeline navigation) ─────────────────────────────────
+function MiniCalendar({ value, maxDate, onPick, onClose }) {
+  const initial = value ? new Date(value + "T00:00:00") : new Date();
+  const [view, setView] = useState({ y: initial.getFullYear(), m: initial.getMonth() });
+
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const firstDay = new Date(view.y, view.m, 1).getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const pad = n => String(n).padStart(2, "0");
+  const cellDate = d => `${view.y}-${pad(view.m + 1)}-${pad(d)}`;
+
+  function prevMonth() { setView(v => v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }); }
+  function nextMonth() { setView(v => v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }); }
+
+  return (
+    <div style={cal.pop} onClick={e => e.stopPropagation()}>
+      <div style={cal.head}>
+        <button onClick={prevMonth} style={cal.navBtn}>◀</button>
+        <span style={cal.title}>{monthNames[view.m]} {view.y}</span>
+        <button onClick={nextMonth} style={cal.navBtn}>▶</button>
+      </div>
+      <div style={cal.grid}>
+        {["S","M","T","W","T","F","S"].map((d, i) => (
+          <span key={i} style={cal.dow}>{d}</span>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <span key={i} />;
+          const ds = cellDate(d);
+          const disabled = maxDate ? ds > maxDate : false;
+          const isSelected = ds === value;
+          const isToday = ds === getTodayLocalDate();
+          return (
+            <button
+              key={i}
+              disabled={disabled}
+              onClick={() => { onPick?.(ds); onClose?.(); }}
+              style={{
+                ...cal.day,
+                ...(isSelected ? cal.daySelected : {}),
+                ...(isToday && !isSelected ? cal.dayToday : {}),
+                ...(disabled ? cal.dayDisabled : {}),
+              }}
+            >{d}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const mdModal = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9998, padding: 20 },
+  box:     { background: "#fff", borderRadius: 20, width: "100%", maxWidth: 520, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.25)" },
+  header:  { padding: "22px 26px 16px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  close:   { background: "#F1F5F9", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 14, color: "#64748B" },
+  body:    { padding: "18px 26px", overflowY: "auto", flex: 1 },
+  footer:  { padding: "14px 26px 22px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "flex-end", gap: 12 },
+  input:   { width: "100%", padding: "11px 14px", border: "1.5px solid #E2E8F0", borderRadius: 10, fontSize: 14, background: "#F8FAFC", color: "#111827", outline: "none", boxSizing: "border-box" },
+  cancelBtn: { background: "#F1F5F9", color: "#374151", border: "none", padding: "11px 18px", borderRadius: 10, cursor: "pointer", fontWeight: 600, fontSize: 14 },
+  saveBtn:   { color: "#fff", border: "none", padding: "11px 22px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14 },
+  typeCard: (color, bg, border) => ({ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", background: bg, border: `2px solid ${border}`, borderRadius: 16, cursor: "pointer" }),
+};
+
+const cal = {
+  pop:   { position: "absolute", top: "calc(100% + 8px)", right: 0, background: "#fff", borderRadius: 14, boxShadow: "0 12px 40px rgba(0,0,0,0.18)", border: "1px solid #E2E8F0", padding: 14, zIndex: 200, width: 260 },
+  head:  { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  title: { fontSize: 13, fontWeight: 800, color: "#111827" },
+  navBtn:{ background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 8, padding: "4px 9px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#374151" },
+  grid:  { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 },
+  dow:   { fontSize: 10, fontWeight: 700, color: "#9CA3AF", textAlign: "center", padding: "4px 0" },
+  day:   { aspectRatio: "1", border: "none", background: "transparent", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" },
+  daySelected: { background: "#2563EB", color: "#fff", fontWeight: 800 },
+  dayToday: { background: "#EFF6FF", color: "#2563EB", fontWeight: 800 },
+  dayDisabled: { color: "#D1D5DB", cursor: "not-allowed" },
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MDDashboard({ onLogout }) {
@@ -962,6 +1536,11 @@ export default function MDDashboard({ onLogout }) {
   const [tourDiary, setTourDiary]       = useState([]);
   const [popup, setPopup]               = useState(null);
   const [greeting, setGreeting]         = useState(getDynamicGreeting());
+
+  // ── Editorial modals (MD add flows) ───────────────────────────────────────
+  const [showScheduleAdd, setShowScheduleAdd] = useState(false);
+  const [showTourAdd, setShowTourAdd]         = useState(false);
+  const [showCalendar, setShowCalendar]       = useState(false);
 
   // ── Mobile / Desktop view toggle ─────────────────────────────────────────
   // deviceIsMobile tracks the real viewport (updates on resize/rotation).
@@ -1295,6 +1874,58 @@ export default function MDDashboard({ onLogout }) {
     closeTimeOverPopup(true);
   };
 
+  // ── Editorial actions from the expandable LiveStatusBadge ─────────────────
+  // These act directly on the passed citizen/meeting (not via the time-over
+  // popup) so Madam can complete/advance from the header at any time.
+  const badgeCompleteCitizen = async (citizen) => {
+    const c = citizen || currentInCabin;
+    if (!c?.id) return;
+    const { error } = await supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id);
+    if (error) console.error("[MDDashboard] badge complete citizen:", error);
+    if (c.google_event_id) {
+      syncCalendarUpdate({
+        google_event_id: c.google_event_id, appointment_id: c.appointment_id,
+        citizen_name: c.citizen_name, purpose: c.purpose, appointment_date: c.appointment_date,
+        appointment_time: c.appointment_time, appointment_end_time: c.appointment_end_time,
+        appointment_duration: c.appointment_duration, officer_name: c.officer_name,
+        mobile: c.mobile, location: c.location,
+      }).catch(e => console.error("[MDDashboard] badge complete calendar:", e));
+    }
+    fetchAll();
+  };
+
+  const badgeNextCitizen = async (citizen) => {
+    const c = citizen || currentInCabin; // may be null when cabin is free
+    const next = nextInQueue;
+    const ops = [];
+    if (c?.id) ops.push(supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id));
+    if (next?.id) ops.push(supabase.from("appointments").update({ status: "In Cabin" }).eq("id", next.id));
+    if (ops.length === 0) return;
+    const results = await Promise.all(ops);
+    results.forEach(r => { if (r.error) console.error("[MDDashboard] badge next citizen:", r.error); });
+    fetchAll();
+  };
+
+  const badgeExtendCitizen = async (citizen) => {
+    const c = citizen || currentInCabin;
+    if (!c?.id) return;
+    const id = c.id ?? c.appointment_id;
+    const newDuration = (Number(c.appointment_duration) || 0) + 5;
+    setExtensions(prev => ({ ...prev, [id]: (prev[id] || 0) + 5 }));
+    handledTimeOverRef.current.delete(`timeover-${id}`);
+    persistHandledTimeOver();
+    const { error } = await supabase.from("appointments").update({ appointment_duration: newDuration }).eq("id", c.id);
+    if (error) console.error("[MDDashboard] badge extend:", error);
+    fetchAll();
+  };
+
+  const badgeCompleteMeeting = async (meeting) => {
+    if (!meeting?.id) return;
+    const { error } = await supabase.from("executive_meetings").update({ status: "Completed" }).eq("id", meeting.id);
+    if (error) console.error("[MDDashboard] badge complete meeting:", error);
+    fetchAll();
+  };
+
   // ── Auto-status engine (runs on the dashboard itself) ─────────────────────
   // Mirrors the Appointments-page engine so statuses advance even when only
   // the MD Dashboard is open:
@@ -1459,17 +2090,6 @@ export default function MDDashboard({ onLogout }) {
     setTimelineDate(next >= currentToday ? currentToday : next);
   }
 
-  function handleDatePick(e) {
-    const picked = e.target.value;
-    if (!picked) return;
-    // Clamp — never allow future dates
-    if (picked > today) {
-      setTimelineDate(today);
-    } else {
-      setTimelineDate(picked);
-    }
-  }
-
   // Reuse the values derived above (used by the timer + action handlers) so we
   // don't recompute the same filters twice.
   const currentCitizen  = currentInCabin;
@@ -1502,6 +2122,25 @@ export default function MDDashboard({ onLogout }) {
             onNext={handleTimeOverNext}
             onExtend={handleTimeOverExtend}
             onDismiss={handleTimeOverDismiss}
+          />
+        </ErrorBoundary>
+      )}
+
+      {showScheduleAdd && (
+        <ErrorBoundary fallback={null}>
+          <ScheduleAddModal
+            defaultDate={timelineDate}
+            onClose={() => setShowScheduleAdd(false)}
+            onSaved={() => { fetchAll(); fetchTimeline(timelineDate); }}
+          />
+        </ErrorBoundary>
+      )}
+
+      {showTourAdd && (
+        <ErrorBoundary fallback={null}>
+          <TourAddModal
+            onClose={() => setShowTourAdd(false)}
+            onSaved={() => { fetchAll(); }}
           />
         </ErrorBoundary>
       )}
@@ -1560,7 +2199,15 @@ export default function MDDashboard({ onLogout }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {!isMobileView && (
             <ErrorBoundary fallback={null}>
-              <LiveStatusBadge currentCitizen={currentCitizen} meetings={meetings} />
+              <LiveStatusBadge
+                currentCitizen={currentCitizen}
+                meetings={meetings}
+                hasNextCitizen={!!nextInQueue}
+                onCompleteCitizen={badgeCompleteCitizen}
+                onNextCitizen={badgeNextCitizen}
+                onExtendCitizen={badgeExtendCitizen}
+                onCompleteMeeting={badgeCompleteMeeting}
+              />
             </ErrorBoundary>
           )}
           {!isMobileView && (
@@ -1767,7 +2414,7 @@ export default function MDDashboard({ onLogout }) {
 
         {/* TOUR DIARY */}
         <ErrorBoundary>
-          <TourDiarySection tourDiary={tourDiary} />
+          <TourDiarySection tourDiary={tourDiary} onAddTour={() => setShowTourAdd(true)} />
         </ErrorBoundary>
 
         {/* ── SCHEDULE / TIMELINE ─────────────────────────────────────────── */}
@@ -1804,22 +2451,26 @@ export default function MDDashboard({ onLogout }) {
                 style={{ background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "8px 13px", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", lineHeight: 1 }}
               >◀</button>
 
-              {/* Date display + hidden picker */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F8FAFC", border: `1.5px solid ${isOnToday ? "#BFDBFE" : "#DDD6FE"}`, borderRadius: 12, padding: "8px 14px", cursor: "pointer", position: "relative", minWidth: 130 }}>
+              {/* Date display + calendar popover */}
+              <div
+                onClick={() => setShowCalendar(s => !s)}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "#F8FAFC", border: `1.5px solid ${isOnToday ? "#BFDBFE" : "#DDD6FE"}`, borderRadius: 12, padding: "8px 14px", cursor: "pointer", position: "relative", minWidth: 130 }}
+              >
                 <span style={{ fontSize: 15 }}>📅</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", whiteSpace: "nowrap" }}>
                   {isOnToday
                     ? "Today"
                     : new Date(timelineDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
                 </span>
-                {/* Hidden date input — max clamped to today */}
-                <input
-                  type="date"
-                  value={timelineDate}
-                  max={today}
-                  onChange={handleDatePick}
-                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
-                />
+                <span style={{ fontSize: 10, color: "#9CA3AF" }}>▾</span>
+                {showCalendar && (
+                  <MiniCalendar
+                    value={timelineDate}
+                    maxDate={today}
+                    onPick={(ds) => setTimelineDate(ds)}
+                    onClose={() => setShowCalendar(false)}
+                  />
+                )}
               </div>
 
               {/* ▶ Next — disabled when on today */}
@@ -1851,6 +2502,15 @@ export default function MDDashboard({ onLogout }) {
                   Today
                 </button>
               )}
+
+              {/* ➕ Master Add — schedule VC / other on the shown date */}
+              <button
+                onClick={() => setShowScheduleAdd(true)}
+                title="Add VC or other item to the schedule"
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", border: "none", borderRadius: 12, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 12px rgba(37,99,235,0.3)", lineHeight: 1 }}
+              >
+                ➕ Add
+              </button>
             </div>
 
             {/* Legend */}
