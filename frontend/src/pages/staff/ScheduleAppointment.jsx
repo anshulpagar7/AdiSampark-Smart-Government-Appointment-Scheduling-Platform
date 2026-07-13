@@ -333,6 +333,7 @@ export default function ScheduleAppointment() {
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleCreate = async () => {
+    if (saving) return; // synchronous guard against fast double-tap
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
