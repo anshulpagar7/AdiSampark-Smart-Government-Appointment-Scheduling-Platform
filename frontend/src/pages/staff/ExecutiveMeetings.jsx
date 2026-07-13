@@ -197,20 +197,55 @@ export default function ExecutiveMeetings() {
         .eq("id", editId);
       if (error) { console.log(error); alert("Failed to update: " + error.message); return; }
 
-      // Sync calendar update (non-blocking)
+      // ── Keep Google Calendar in step with the edit ────────────────────────
+      // Previously this was fire-and-forget and skipped entirely when the row
+      // had no google_event_id — so edits to a not-yet-synced meeting never hit
+      // the calendar. Now we AWAIT the update, and if there's no existing event
+      // we CREATE one, storing the new id so future edits sync too.
       const existingMeeting = meetings.find(m => m.id === editId);
-      if (existingMeeting?.google_event_id) {
-        syncCalendarUpdate({
-          google_event_id:    existingMeeting.google_event_id,
-          appointment_id:     `MTG-${editId}`,
-          meeting_title:      data.title,
-          meeting_with:       data.meeting_with,
-          meeting_date:       data.meeting_date,
-          meeting_start_time: data.meeting_time,
-          meeting_end_time:   data.meeting_end_time,
-          meeting_link:       data.meet_link || null,
-          notes:              data.notes || null,
-        }).catch(e => console.error("[ExecutiveMeetings] calendar update failed:", e));
+      try {
+        if (existingMeeting?.google_event_id) {
+          const updResult = await syncCalendarUpdate({
+            google_event_id:    existingMeeting.google_event_id,
+            appointment_id:     `MTG-${editId}`,
+            meeting_title:      data.title,
+            meeting_with:       data.meeting_with,
+            meeting_date:       data.meeting_date,
+            meeting_start_time: data.meeting_time,
+            meeting_end_time:   data.meeting_end_time,
+            meeting_link:       data.meet_link || null,
+            notes:              data.notes || null,
+          });
+          // If the stored event was stale/deleted, the function recreates it and
+          // returns a NEW id — persist it so future edits target the live event.
+          const newId = updResult?.google_event_id;
+          if (newId && newId !== existingMeeting.google_event_id) {
+            await supabase
+              .from("executive_meetings")
+              .update({ google_event_id: newId })
+              .eq("id", editId);
+          }
+        } else {
+          // No calendar event yet — create one so the edit is reflected.
+          const calResult = await syncCalendarCreate({
+            appointment_id:     `MTG-${editId}`,
+            meeting_title:      data.title,
+            meeting_with:       data.meeting_with,
+            meeting_date:       data.meeting_date,
+            meeting_start_time: data.meeting_time,
+            meeting_end_time:   data.meeting_end_time,
+            meeting_link:       data.meet_link || null,
+            notes:              data.notes || null,
+          });
+          if (calResult?.google_event_id) {
+            await supabase
+              .from("executive_meetings")
+              .update({ google_event_id: calResult.google_event_id })
+              .eq("id", editId);
+          }
+        }
+      } catch (calErr) {
+        console.error("[ExecutiveMeetings] calendar update failed:", calErr);
       }
     } else {
       // ── CREATE ──────────────────────────────────────────────────────────────
@@ -342,11 +377,30 @@ export default function ExecutiveMeetings() {
       }).catch(e => console.error("[ExecutiveMeetings] calendar delete failed:", e));
     }
 
-    const { error } = await supabase
+    // Use .select() so we can confirm how many rows were actually removed.
+    // With Row-Level Security, a missing DELETE policy returns NO error but
+    // deletes 0 rows — this makes that case visible instead of silently failing.
+    const { data: deletedRows, error } = await supabase
       .from("executive_meetings")
       .delete()
-      .eq("id", id);
-    if (error) { console.log(error); alert("Failed to delete: " + error.message); return; }
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      console.error("[ExecutiveMeetings] delete error:", error);
+      alert("Failed to delete: " + error.message);
+      return;
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      console.error("[ExecutiveMeetings] delete removed 0 rows (likely RLS DELETE policy missing) for id:", id);
+      alert(
+        "Nothing was deleted. The database blocked the delete — this is almost " +
+        "always a missing Row-Level Security DELETE policy on the " +
+        "'executive_meetings' table in Supabase. Add a DELETE policy and try again."
+      );
+      return;
+    }
 
     fetchMeetings();
   };
@@ -490,17 +544,27 @@ export default function ExecutiveMeetings() {
               )}
 
               <div style={styles.cardActions}>
-                {m.meet_link && (
-                  <a href={m.meet_link} target="_blank" rel="noreferrer" style={styles.joinBtn}>🎥 Join Meet</a>
+                {effectiveStatus === "Completed" ? (
+                  // Meeting time has passed — locked. No edit / cancel / delete,
+                  // just a clear completed indicator.
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#059669", fontSize: "13px", fontWeight: "700" }}>
+                    ✅ Completed — this meeting has ended
+                  </span>
+                ) : (
+                  <>
+                    {m.meet_link && (
+                      <a href={m.meet_link} target="_blank" rel="noreferrer" style={styles.joinBtn}>🎥 Join Meet</a>
+                    )}
+                    <button onClick={() => handleEdit(m)} style={styles.editBtn}>✏️ Edit</button>
+                    {effectiveStatus !== "Cancelled" && (
+                      <button onClick={() => markCompleted(m.id)} style={styles.completeBtn}>✓ Mark Completed</button>
+                    )}
+                    {effectiveStatus !== "Cancelled" && (
+                      <button onClick={() => handleCancelMeeting(m.id)} style={styles.deleteBtn}>🚫 Cancel Meeting</button>
+                    )}
+                    <button onClick={() => handleDeleteMeeting(m.id)} style={styles.hardDeleteBtn}>🗑️ Delete</button>
+                  </>
                 )}
-                <button onClick={() => handleEdit(m)} style={styles.editBtn}>✏️ Edit</button>
-                {effectiveStatus !== "Completed" && effectiveStatus !== "Cancelled" && (
-                  <button onClick={() => markCompleted(m.id)} style={styles.completeBtn}>✓ Mark Completed</button>
-                )}
-                {effectiveStatus !== "Cancelled" && (
-                  <button onClick={() => handleCancelMeeting(m.id)} style={styles.deleteBtn}>🚫 Cancel Meeting</button>
-                )}
-                <button onClick={() => handleDeleteMeeting(m.id)} style={styles.hardDeleteBtn}>🗑️ Delete</button>
               </div>
             </div>
           );
