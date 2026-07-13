@@ -59,6 +59,30 @@ function nowMinutes() {
   return n.getHours() * 60 + n.getMinutes();
 }
 
+/**
+ * True if this appointment's time window overlaps any of the given VC meetings.
+ * Overlap test: apptStart < meetingEnd AND apptEnd > meetingStart.
+ * apptEnd falls back to stored end time, then start+duration, then start+5.
+ */
+function appointmentOverlapsVc(appt, meetings) {
+  if (!meetings || meetings.length === 0) return false;
+  const apptStart = parseTimeToMinutes(appt.appointment_time);
+  if (apptStart === null) return false;
+  let apptEnd = parseTimeToMinutes(appt.appointment_end_time);
+  if (apptEnd === null) {
+    apptEnd = appt.appointment_duration
+      ? apptStart + Number(appt.appointment_duration)
+      : apptStart + 5;
+  }
+  for (const m of meetings) {
+    const mStart = parseTimeToMinutes(m.meeting_time);
+    const mEnd   = parseTimeToMinutes(m.meeting_end_time);
+    if (mStart === null || mEnd === null) continue;
+    if (apptStart < mEnd && apptEnd > mStart) return true;
+  }
+  return false;
+}
+
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -244,6 +268,7 @@ function printAppointments(appointments, dateStr) {
 
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
+  const [executiveMeetings, setExecutiveMeetings] = useState([]);
   const [cabinCitizen, setCabinCitizen] = useState(null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -258,6 +283,7 @@ export default function Appointments() {
     // Reset transition tracking whenever the date changes
     autoTransitionedRef.current = new Set();
     fetchAppointments();
+    fetchMeetings();
   }, [selectedDate]);
 
   const fetchAppointments = useCallback(async () => {
@@ -279,6 +305,20 @@ export default function Appointments() {
     setAppointments(sorted);
     const cabin = data.find(a => a.status === "In Cabin");
     setCabinCitizen(cabin || null);
+  }, [selectedDate]);
+
+  // ── Fetch executive meetings (VCs) for the selected date ──────────────────
+  // Used only to show a small "overlapping with VC" note. It does NOT change any
+  // appointment status — overlapping citizens stay in "Waiting" and auto-complete
+  // normally when their time arrives.
+  const fetchMeetings = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("executive_meetings")
+      .select("id, meeting_time, meeting_end_time, meeting_date, status")
+      .eq("meeting_date", selectedDate)
+      .neq("status", "Cancelled");
+    if (error) { console.log(error); return; }
+    setExecutiveMeetings(data ?? []);
   }, [selectedDate]);
 
   // ── Auto-status engine ────────────────────────────────────────────────────
@@ -442,17 +482,17 @@ export default function Appointments() {
     setSelectedDate(toDateString(d));
   };
 
-  // ── Realtime: refresh whenever appointments change in any tab/device ──
-  useRealtime("appointments", fetchAppointments);
+  // ── Realtime: refresh whenever appointments or VCs change in any tab/device ──
+  useRealtime({ appointments: fetchAppointments, executive_meetings: fetchMeetings });
 
   // ── Safety-net auto-refresh ────────────────────────────────────────────────
   // Realtime pushes changes instantly, but if the channel drops (tab sleep,
   // network blip, Realtime disabled on the table) the list would go stale.
   // A 30s poll guarantees freshness — same cadence as the MD Dashboard.
   useEffect(() => {
-    const t = setInterval(fetchAppointments, 30000);
+    const t = setInterval(() => { fetchAppointments(); fetchMeetings(); }, 30000);
     return () => clearInterval(t);
-  }, [fetchAppointments]);
+  }, [fetchAppointments, fetchMeetings]);
 
   const filtered = appointments.filter(a => {
     const matchSearch =
@@ -643,6 +683,11 @@ export default function Appointments() {
                         <span style={{ ...styles.statusDot, background: sc.dot }} />
                         {a.status}
                       </span>
+                      {appointmentOverlapsVc(a, executiveMeetings) && (
+                        <span style={styles.vcOverlapNote} title="This appointment's time overlaps an executive VC. It stays in the waiting queue and completes normally.">
+                          ⚠️ overlapping with VC
+                        </span>
+                      )}
                     </td>
 
                     {/* Actions — unchanged workflow + manual override always available */}
@@ -738,6 +783,7 @@ const styles = {
   // Status
   statusBadge: { display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", whiteSpace: "nowrap" },
   statusDot: { width: "6px", height: "6px", borderRadius: "50%", flexShrink: 0 },
+  vcOverlapNote: { display: "block", marginTop: "4px", fontSize: "10px", fontWeight: "600", color: "#9333EA", whiteSpace: "nowrap" },
   // Actions
   actionBtns: { display: "flex", gap: "6px", flexWrap: "wrap" },
   actionBtnBlue:  { background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
