@@ -9,7 +9,7 @@ export const translations = {
     officeTimings:    "Office Timings",
     lunchBreak:       "Lunch Break",
     appointmentsWith: "Appointments With",
-    designationMD:    "Commissioner / Managing Director",
+    designationMD:    "Commissioner / Managing Director / IAS",
     durationDesc:     "Select how long you need with the Commissioner / Managing Director. Each slot is 5 minutes.",
     welcomeMessage:   "Welcome to the 'Aadi Sampark' portal! This facility enables citizens to book hassle-free appointments with the Commissioner / Managing Director. In case of difficulty in booking the online appointment, call 0253-2577510 / 2572916 to book your appointment — or just walk in to the office and register yourself.",
 
@@ -83,7 +83,7 @@ export const translations = {
     officeTimings:    "कार्यालयीन वेळ",
     lunchBreak:       "जेवणाची सुट्टी",
     appointmentsWith: "भेट घ्या",
-    designationMD:    "आयुक्त / व्यवस्थापकीय संचालक",
+    designationMD:    "आयुक्त / व्यवस्थापकीय संचालक / IAS",
     durationDesc:     "आयुक्त / व्यवस्थापकीय संचालक यांच्याशी किती वेळ हवा ते निवडा. प्रत्येक स्लॉट ५ मिनिटांचा आहे.",
     welcomeMessage:   "'आदी संपर्क' प्रणालीवर आपले स्वागत आहे! ही सुविधा नागरिकांना आयुक्त / व्यवस्थापकीय संचालक यांची सुलभतेने भेट घेण्यासाठी उपयुक्त आहे. ही प्रणाली वापरतांना कोणतीही अडचण आल्यास कृपया 0253-2577510 / 2572916 या क्रमांकावर संपर्क साधून आपली अपॉइंटमेंट नोंदवा. किंवा आपण थेट कार्यालयात येऊनही आपल्या भेटीची नोंदणी करू शकता.",
 
@@ -157,7 +157,7 @@ export const translations = {
     officeTimings:    "कार्यालय समय",
     lunchBreak:       "दोपहर का अवकाश",
     appointmentsWith: "अपॉइंटमेंट लें",
-    designationMD:    "आयुक्त / प्रबंध निदेशक",
+    designationMD:    "आयुक्त / प्रबंध निदेशक / IAS",
     durationDesc:     "आयुक्त / प्रबंध निदेशक के साथ आपको कितने समय की जरूरत है चुनें। प्रत्येक स्लॉट ५ मिनट का है।",
     welcomeMessage:   "'आदी संपर्क' पोर्टल में आपका स्वागत है! यह सुविधा नागरिकों को आयुक्त / प्रबंध निदेशक के साथ आसानी से अपॉइंटमेंट बुक करने की सुविधा प्रदान करती है। ऑनलाइन अपॉइंटमेंट बुक करने में कोई कठिनाई होने पर कृपया 0253-2577510 / 2572916 पर कॉल करके अपनी अपॉइंटमेंट दर्ज करें — या सीधे कार्यालय में आकर अपना पंजीकरण कराएँ।",
 
