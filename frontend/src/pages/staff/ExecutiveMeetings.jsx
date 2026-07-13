@@ -324,6 +324,37 @@ export default function ExecutiveMeetings() {
     fetchMeetings();
   };
 
+  // ── PERMANENT DELETE ────────────────────────────────────────────────────────
+  // Hard-deletes the meeting row from the database (and removes its calendar
+  // event). Unlike "Cancel Meeting" this leaves NO record behind and cannot be
+  // undone, so it always asks for confirmation first.
+  const handleDeleteMeeting = async (id) => {
+    const meeting = meetings.find(m => m.id === id);
+    const label = meeting?.title ? `"${meeting.title}"` : "this meeting";
+    const ok = window.confirm(
+      `Permanently delete ${label}?\n\n` +
+      `This removes the record from the database and the calendar. ` +
+      `This action cannot be undone.`
+    );
+    if (!ok) return;
+
+    // Remove the calendar event first (non-blocking) so we don't orphan it.
+    if (meeting?.google_event_id) {
+      syncCalendarDelete({
+        google_event_id: meeting.google_event_id,
+        appointment_id:  `MTG-${id}`,
+      }).catch(e => console.error("[ExecutiveMeetings] calendar delete failed:", e));
+    }
+
+    const { error } = await supabase
+      .from("executive_meetings")
+      .delete()
+      .eq("id", id);
+    if (error) { console.log(error); alert("Failed to delete: " + error.message); return; }
+
+    fetchMeetings();
+  };
+
   const meetingsWithEffectiveStatus = meetings.map(m => ({
     ...m,
     _effectiveStatus: getEffectiveStatus(m),
@@ -473,6 +504,7 @@ export default function ExecutiveMeetings() {
                 {effectiveStatus !== "Cancelled" && (
                   <button onClick={() => handleCancelMeeting(m.id)} style={styles.deleteBtn}>🚫 Cancel Meeting</button>
                 )}
+                <button onClick={() => handleDeleteMeeting(m.id)} style={styles.hardDeleteBtn}>🗑️ Delete</button>
               </div>
             </div>
           );
@@ -655,6 +687,7 @@ const styles = {
   editBtn:          { background: "#F8FAFC", color: "#374151", border: "1px solid #E2E8F0", padding: "8px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
   completeBtn:      { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", padding: "8px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
   deleteBtn:        { background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "8px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
+  hardDeleteBtn:    { background: "#DC2626", color: "#fff", border: "1px solid #B91C1C", padding: "8px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "700" },
   emptyState:       { textAlign: "center", padding: "60px 0" },
   modalOverlay:     { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
   modal:            { background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "560px", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" },
