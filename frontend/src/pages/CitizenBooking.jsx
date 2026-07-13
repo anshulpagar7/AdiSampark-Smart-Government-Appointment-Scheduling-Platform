@@ -565,15 +565,21 @@ export default function CitizenBooking() {
   // ── Fetch booked appointments for the effective date ──────────────────────
   useEffect(() => {
     if (!effectiveDateStr) { setBookedAppointments([]); return; }
+    let cancelled = false;
     async function fetchBooked() {
       const { data, error } = await supabase
         .from("appointments")
         .select("appointment_time, appointment_duration")
         .eq("appointment_date", effectiveDateStr);
+      if (cancelled) return;
       if (!error && data) setBookedAppointments(data);
       else setBookedAppointments([]);
     }
     fetchBooked();
+    // Poll every 20s so a form left open doesn't show stale availability and
+    // two citizens are far less likely to grab the same slot.
+    const poll = setInterval(fetchBooked, 20000);
+    return () => { cancelled = true; clearInterval(poll); };
   }, [effectiveDateStr]);
 
   // ── Derived occupied slots set ────────────────────────────────────────────
@@ -620,6 +626,33 @@ export default function CitizenBooking() {
     const bookingDate = appointmentType === "today" ? todayStr : selectedDate;
     const endTime     = computeEndTime(selectedSlot, appointmentDuration);
 
+    // ── Last-second availability re-check ─────────────────────────────────────
+    // The slot grid is a snapshot from when the date was picked; someone else
+    // may have taken this slot while this form was open. Re-read live occupancy
+    // and abort if the chosen run now clashes. (The DB constraint below is the
+    // real guarantee — this just gives a friendly message instead of an error.)
+    const { data: freshRows, error: freshErr } = await supabase
+      .from("appointments")
+      .select("appointment_time, appointment_duration")
+      .eq("appointment_date", bookingDate);
+
+    if (!freshErr && freshRows) {
+      const liveOccupied = buildOccupiedSet(freshRows);
+      const myRun = getOccupiedSlots(selectedSlot, appointmentDuration) ?? [selectedSlot];
+      const clash = myRun.some(sl => liveOccupied.has(sl));
+      if (clash) {
+        setBookedAppointments(freshRows); // refresh the grid so it's now greyed
+        alert(
+          "Sorry — this time slot was just booked by someone else. " +
+          "Please pick another available slot."
+        );
+        setSelectedSlot(null);
+        setStep(appointmentType === "future" ? 5 : 4); // back to slot picker
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const { data: insertedRow, error } = await supabase
       .from("appointments")
       .insert({
@@ -640,7 +673,24 @@ export default function CitizenBooking() {
 
     if (error) {
       console.error(error);
-      alert("Failed to book appointment" + (error.message ? ": " + error.message : ""));
+      // 23505 = Postgres unique_violation → the slot was taken a split second
+      // before us and the DB constraint (correctly) blocked the double-booking.
+      if (error.code === "23505") {
+        // refresh grid so the taken slot shows as booked
+        const { data: refetch } = await supabase
+          .from("appointments")
+          .select("appointment_time, appointment_duration")
+          .eq("appointment_date", bookingDate);
+        if (refetch) setBookedAppointments(refetch);
+        alert(
+          "Sorry — this time slot was just booked by someone else. " +
+          "Please pick another available slot."
+        );
+        setSelectedSlot(null);
+        setStep(appointmentType === "future" ? 5 : 4);
+      } else {
+        alert("Failed to book appointment" + (error.message ? ": " + error.message : ""));
+      }
       setSubmitting(false);
       return;
     }
