@@ -342,19 +342,33 @@ export default function ScheduleAppointment() {
       return;
     }
 
-    // Verify all required slots are still free (race-condition safety)
     const run = getOccupiedSlots(selectedSlot, duration);
     if (!run) { alert("Selected slot is invalid. Please choose another."); return; }
-    for (const s of run) {
-      if (occupiedSet.has(s)) {
-        alert(`Slot ${s} is no longer available. Please choose a different start time.`);
-        setSelectedSlot(""); return;
+
+    setSaving(true);
+
+    // ── Live availability re-check (race-condition safety) ────────────────────
+    // Don't trust the on-screen grid — it may be a snapshot from minutes ago.
+    // Ask Supabase for current bookings on this date and re-test the run.
+    const { data: freshRows, error: freshErr } = await supabase
+      .from("appointments")
+      .select("appointment_time, appointment_duration")
+      .eq("appointment_date", form.date);
+
+    if (!freshErr && freshRows) {
+      const liveOccupied = buildOccupiedSet(freshRows);
+      const clashSlot = run.find(s => liveOccupied.has(s));
+      if (clashSlot) {
+        setBookedAppointments(freshRows); // refresh grid so it greys out
+        setSaving(false);
+        alert(`Slot ${clashSlot} was just booked by someone else. Please choose a different start time.`);
+        setSelectedSlot("");
+        return;
       }
     }
 
     const endTime = computeEndTime(selectedSlot, duration);
 
-    setSaving(true);
     const { data: insertedRow, error } = await supabase.from("appointments").insert([{
       appointment_id:       appointmentId,
       citizen_name:         form.name,
@@ -371,7 +385,22 @@ export default function ScheduleAppointment() {
     }]).select().single();
     setSaving(false);
 
-    if (error) { console.log(error); alert("Failed to save: " + error.message); return; }
+    if (error) {
+      console.log(error);
+      if (error.code === "23505") {
+        // DB unique constraint blocked a double-booking that raced past the check
+        const { data: refetch } = await supabase
+          .from("appointments")
+          .select("appointment_time, appointment_duration")
+          .eq("appointment_date", form.date);
+        if (refetch) setBookedAppointments(refetch);
+        alert("This time slot was just booked by someone else. Please choose a different start time.");
+        setSelectedSlot("");
+      } else {
+        alert("Failed to save: " + error.message);
+      }
+      return;
+    }
 
     // ── Google Calendar sync (non-blocking — appointment already saved) ────
     try {
