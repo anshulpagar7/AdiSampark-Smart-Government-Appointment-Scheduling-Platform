@@ -252,15 +252,11 @@ export default function ExecutiveMeetings() {
   };
 
   const handleProceed = async () => {
+    // Save the VC only. Overlapping citizen appointments are intentionally left
+    // untouched — they stay in "Waiting" and auto-complete normally when their
+    // time comes. The VC simply blocks those slots for NEW citizen bookings
+    // (shown as "Ongoing VC" in CitizenBooking).
     await saveMeeting(pendingSave);
-
-    const ids = conflictAppointments.map(a => a.id);
-    const { error } = await supabase
-      .from("appointments")
-      .update({ status: "Reschedule Required" })
-      .in("id", ids);
-
-    if (error) console.log("Failed to update appointments:", error);
 
     setConflictModal(false);
     setConflictAppointments([]);
@@ -586,7 +582,7 @@ export default function ExecutiveMeetings() {
             </div>
             <div style={styles.modalBody}>
               <p style={{ margin: "0 0 16px", fontSize: "14px", color: "#374151" }}>
-                This executive meeting overlaps with existing citizen appointments:
+                This VC overlaps with existing citizen appointments. These citizens will <strong>stay in the waiting queue</strong> and complete normally when their time comes:
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
                 {conflictAppointments.map(a => (
@@ -609,8 +605,8 @@ export default function ExecutiveMeetings() {
                 ))}
               </div>
               <div style={styles.conflictWarning}>
-                <span>⚠️</span>
-                <span>If you proceed, the above citizens will be marked as <strong>"Reschedule Required"</strong> and will need to rebook their appointments.</span>
+                <span>ℹ️</span>
+                <span>These citizens keep their spot in the <strong>waiting queue</strong>. New citizens won't be able to book this VC time — those slots show as <strong>"Ongoing VC"</strong> in citizen booking.</span>
               </div>
             </div>
             <div style={styles.modalFooter}>
