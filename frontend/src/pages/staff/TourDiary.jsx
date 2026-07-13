@@ -249,6 +249,7 @@ export default function TourDiary() {
   }
 
   const handleSave = async () => {
+    if (saving) return; // synchronous guard — button-disabled alone can miss a fast double-tap
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
