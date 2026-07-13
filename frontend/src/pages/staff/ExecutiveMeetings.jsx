@@ -81,6 +81,7 @@ export default function ExecutiveMeetings() {
   const [conflictModal, setConflictModal] = useState(false);
   const [conflictAppointments, setConflictAppointments] = useState([]);
   const [pendingSave, setPendingSave] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchMeetings(); }, []);
 
@@ -184,6 +185,10 @@ export default function ExecutiveMeetings() {
   // ── end upgraded conflict detection ───────────────────────────────────────
 
   const saveMeeting = async (data) => {
+    // Prevent double-submit (double tap / double click) creating duplicate rows.
+    if (saving) return;
+    setSaving(true);
+    try {
     if (editId) {
       // ── UPDATE ──────────────────────────────────────────────────────────────
       const { error } = await supabase
@@ -238,6 +243,9 @@ export default function ExecutiveMeetings() {
       } catch (calErr) {
         console.error("[ExecutiveMeetings] calendar create failed:", calErr);
       }
+    }
+    } finally {
+      setSaving(false);
     }
     closeForm();
     fetchMeetings();
@@ -530,7 +538,7 @@ export default function ExecutiveMeetings() {
             </div>
             <div style={styles.modalFooter}>
               <button onClick={closeForm} style={styles.cancelBtn}>Cancel</button>
-              <button onClick={handleSave} style={styles.saveBtn}>{editId ? "Save Changes" : "Schedule Meeting"}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...styles.saveBtn, ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>{saving ? "Saving…" : (editId ? "Save Changes" : "Schedule Meeting")}</button>
             </div>
           </div>
         </div>
@@ -575,7 +583,7 @@ export default function ExecutiveMeetings() {
             </div>
             <div style={styles.modalFooter}>
               <button onClick={handleCancelConflict} style={styles.cancelBtn}>Cancel</button>
-              <button onClick={handleProceed} style={{ ...styles.saveBtn, background: "linear-gradient(135deg,#D97706,#B45309)" }}>Proceed</button>
+              <button onClick={handleProceed} disabled={saving} style={{ ...styles.saveBtn, background: "linear-gradient(135deg,#D97706,#B45309)", ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>{saving ? "Saving…" : "Proceed"}</button>
             </div>
           </div>
         </div>
