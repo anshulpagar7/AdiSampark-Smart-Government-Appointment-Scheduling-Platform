@@ -343,7 +343,7 @@ serve(async (req: Request) => {
     if (body.action === "update") {
       const result = await calUpdate(token, String(body.google_event_id), payload);
 
-      // Event still exists → updated in place.
+      // Event still exists → updated in place (same id, no duplicate).
       if (result.ok) {
         return new Response(JSON.stringify({
           success: true,
@@ -353,9 +353,19 @@ serve(async (req: Request) => {
         }), { headers: { ...CORS, "Content-Type": "application/json" } });
       }
 
-      // Event was gone (404/410) — the stored google_event_id is stale or the
-      // event was deleted off the calendar. Recreate it so the edit still lands,
-      // and hand back the NEW id so the caller can persist it.
+      // PUT failed (typically 404/410) — the stored google_event_id no longer
+      // resolves. Log the reason, then DELETE the stale event first (best-effort,
+      // in case it does still exist under that id) so recreating can't leave a
+      // duplicate, and finally create the fresh event. Hand back the NEW id so
+      // the caller persists it and future edits target the live event.
+      console.warn(`[google-calendar] update PUT returned ${result.status} for event ${body.google_event_id}; recreating`);
+      try {
+        await calDelete(token, String(body.google_event_id));
+      } catch (delErr) {
+        // Already gone or un-deletable — safe to ignore, we're recreating anyway.
+        console.warn(`[google-calendar] stale event delete before recreate failed (ignored):`, delErr instanceof Error ? delErr.message : String(delErr));
+      }
+
       const recreated = await calCreate(token, payload);
       return new Response(JSON.stringify({
         success: true,
