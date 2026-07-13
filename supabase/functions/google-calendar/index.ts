@@ -75,16 +75,21 @@ async function calCreate(token: string, payload: unknown): Promise<Record<string
   return json;
 }
 
-async function calUpdate(token: string, eventId: string, payload: unknown): Promise<Record<string, unknown>> {
+async function calUpdate(token: string, eventId: string, payload: unknown): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
   const id  = encodeURIComponent(Deno.env.get("GOOGLE_CALENDAR_ID")!);
   const res = await fetch(`${BASE}/${id}/events/${eventId}`, {
     method: "PUT",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`Update failed: ${JSON.stringify(json)}`);
-  return json;
+  const json = await res.json().catch(() => ({}));
+  // Do NOT throw on 404/410 here — the caller decides whether to recreate the
+  // event (it may have been deleted off the calendar manually or the stored
+  // google_event_id is stale). Other non-OK statuses still throw.
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    throw new Error(`Update failed (${res.status}): ${JSON.stringify(json)}`);
+  }
+  return { ok: res.ok, status: res.status, json };
 }
 
 async function calDelete(token: string, eventId: string): Promise<void> {
@@ -334,9 +339,35 @@ serve(async (req: Request) => {
 
     // ── CREATE / UPDATE ──────────────────────────────────────────────────────
     const payload = buildEventPayload(body);
-    const event   = body.action === "update"
-      ? await calUpdate(token, String(body.google_event_id), payload)
-      : await calCreate(token, payload);
+
+    if (body.action === "update") {
+      const result = await calUpdate(token, String(body.google_event_id), payload);
+
+      // Event still exists → updated in place.
+      if (result.ok) {
+        return new Response(JSON.stringify({
+          success: true,
+          action:  "update",
+          google_event_id: result.json.id ?? body.google_event_id,
+          event_link:      result.json.htmlLink,
+        }), { headers: { ...CORS, "Content-Type": "application/json" } });
+      }
+
+      // Event was gone (404/410) — the stored google_event_id is stale or the
+      // event was deleted off the calendar. Recreate it so the edit still lands,
+      // and hand back the NEW id so the caller can persist it.
+      const recreated = await calCreate(token, payload);
+      return new Response(JSON.stringify({
+        success: true,
+        action:  "update",
+        recreated: true,
+        google_event_id: recreated.id,
+        event_link:      recreated.htmlLink,
+      }), { headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+
+    // action === "create"
+    const event = await calCreate(token, payload);
 
     return new Response(JSON.stringify({
       success: true,
