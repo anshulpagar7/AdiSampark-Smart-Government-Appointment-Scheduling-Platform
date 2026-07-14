@@ -333,7 +333,7 @@ function OfficerBadge({ t }) {
         color: "#fff", fontSize: 20, fontWeight: 700, flexShrink: 0,
       }}>LB</div>
       <div>
-        <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#1E3A8A" }}>{OFFICER.name}</p>
+        <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#1E3A8A" }}>{OFFICER.name}, IAS</p>
         <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>{t.designationMD}</p>
       </div>
     </div>
@@ -1329,7 +1329,7 @@ export default function CitizenBooking() {
               <span style={conf.rowIcon}>👩‍💼</span>
               <div>
                 <p style={conf.rowLabel}>{t.meetingWith}</p>
-                <p style={conf.rowValue}>{OFFICER.name}
+                <p style={conf.rowValue}>{OFFICER.name}, IAS
                   <span style={{ marginLeft: 8, fontSize: 12, color: "#6B7280", fontWeight: 400 }}>{t.designationMD}</span>
                 </p>
               </div>
