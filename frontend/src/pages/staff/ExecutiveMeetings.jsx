@@ -412,9 +412,13 @@ export default function ExecutiveMeetings() {
 
   const dateFiltered = meetingsWithEffectiveStatus.filter(m => m.meeting_date === selectedDate);
 
-  const filtered = filter === "All"
-    ? dateFiltered
-    : dateFiltered.filter(m => m._effectiveStatus === filter);
+  const filtered = (
+    filter === "All"
+      ? dateFiltered
+      : dateFiltered.filter(m => m._effectiveStatus === filter)
+  )
+    .slice()
+    .sort((a, b) => timeToMinutes(a.meeting_time) - timeToMinutes(b.meeting_time));
 
   const modeStyle = {
     "Google Meet": { bg: "#EFF6FF", color: "#2563EB", icon: "🎥" },
@@ -474,10 +478,10 @@ export default function ExecutiveMeetings() {
 
       {/* Stats */}
       <div style={styles.statsRow}>
-        <StatCard label="Total Meetings"  value={meetings.length}                                                              color="#2563EB" />
-        <StatCard label="Upcoming"        value={meetingsWithEffectiveStatus.filter(m => m._effectiveStatus === "Upcoming").length}  color="#F59E0B" />
-        <StatCard label="Completed"       value={meetingsWithEffectiveStatus.filter(m => m._effectiveStatus === "Completed").length} color="#10B981" />
-        <StatCard label="Google Meet"     value={meetings.filter(m => m.meet_link).length}                                    color="#6366F1" />
+        <StatCard label="Total Meetings"  value={dateFiltered.length}                                                    color="#2563EB" />
+        <StatCard label="Upcoming"        value={dateFiltered.filter(m => m._effectiveStatus === "Upcoming").length}    color="#F59E0B" />
+        <StatCard label="Completed"       value={dateFiltered.filter(m => m._effectiveStatus === "Completed").length}   color="#10B981" />
+        <StatCard label="Google Meet"     value={dateFiltered.filter(m => m.meet_link).length}                          color="#6366F1" />
       </div>
 
       {/* Filter tabs */}
