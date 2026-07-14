@@ -2244,6 +2244,22 @@ export default function MDDashboard({ onLogout }) {
   const currentCitizen  = currentInCabin;
   const waitingCitizens = waitingSorted;
   const nextCitizen     = nextInQueue;
+
+  // A VC counts as "ongoing" when now is within [start, end] and it isn't
+  // cancelled/completed. Used to show the live VC in the Currently Meeting card
+  // (its slot is already blocked in booking, so the MD sees what's occupying it).
+  const ongoingVc = (() => {
+    const now = nowMinutes();
+    const today = getTodayLocalDate();
+    return meetings.find(m => {
+      if (!m.meeting_time) return false;
+      if (m.status === "Cancelled" || m.status === "Completed") return false;
+      if (m.meeting_date && m.meeting_date !== today) return false;
+      const start = parseTimeToMinutes(m.meeting_time);
+      const end   = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : start + 30;
+      return now >= start && now <= end;
+    }) || null;
+  })();
   const completedCount  = appointments.filter(a => a.status === "Completed").length;
   const totalCount      = appointments.length;
   const progressPct     = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -2252,6 +2268,61 @@ export default function MDDashboard({ onLogout }) {
   const tlApptCount    = timelineAppts.length;
   const tlMeetingCount = timelineMeetings.length;
   const tlHasEvents    = tlApptCount > 0 || tlMeetingCount > 0;
+
+  // ── Currently-Meeting card content blocks ─────────────────────────────────
+  // The card can show a citizen in cabin, an ongoing VC, both (split), or the
+  // empty "Cabin Available" state. `compact` shrinks type/spacing for the split.
+  const renderCitizenInCabin = (compact = false) => (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: "50%", background: "linear-gradient(135deg,#DBEAFE,#EFF6FF)", border: "2px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: compact ? 15 : 18, fontWeight: 700, color: "#2563EB", flexShrink: 0 }}>
+          {currentCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: compact ? 16 : 20, fontWeight: 800, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentCitizen.citizen_name}</h2>
+          <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentCitizen.purpose}</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #BFDBFE" }}>🕐 {currentCitizen.appointment_time}</span>
+        {currentCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {currentCitizen.appointment_end_time}</span>}
+        {currentCitizen.appointment_duration && <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
+      </div>
+      <ErrorBoundary fallback={null}>
+        <CurrentCitizenTimer
+          citizen={currentCitizen}
+          extraMinutes={extensions[currentCitizen.id ?? currentCitizen.appointment_id] || 0}
+          onExpire={() => handleCitizenTimeOver(currentCitizen)}
+        />
+      </ErrorBoundary>
+      <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Token</span>
+        <span style={{ fontSize: compact ? 22 : 28, fontWeight: 900, color: "#2563EB", letterSpacing: "0.04em" }}>{currentCitizen.appointment_id}</span>
+      </div>
+    </>
+  );
+
+  const renderOngoingVc = (compact = false) => (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: "50%", background: "linear-gradient(135deg,#EDE9FE,#F5F3FF)", border: "2px solid #DDD6FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: compact ? 18 : 22, flexShrink: 0 }}>🎥</div>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: compact ? 15 : 18, fontWeight: 800, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{ongoingVc.title}</h2>
+          <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>with {ongoingVc.meeting_with || "—"}</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>🕐 {ongoingVc.meeting_time}</span>
+        {ongoingVc.meeting_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {ongoingVc.meeting_end_time}</span>}
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#EDE9FE", padding: "4px 10px", borderRadius: 99, border: "1px solid #C4B5FD" }}>Ongoing VC</span>
+      </div>
+      {isMeetLinkValid(ongoingVc.meet_link) ? (
+        <a href={ongoingVc.meet_link} target="_blank" rel="noopener noreferrer" style={{ display: "block", background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", textDecoration: "none", padding: "12px 20px", borderRadius: 14, textAlign: "center", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>🔗 Join VC</a>
+      ) : (
+        <div style={{ background: "#F5F3FF", borderRadius: 14, padding: "12px 20px", textAlign: "center", color: "#7C3AED", fontSize: 13, fontWeight: 600, border: "1px solid #DDD6FE" }}>Video conference in progress</div>
+      )}
+    </>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#F0F4FF", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
@@ -2444,39 +2515,27 @@ export default function MDDashboard({ onLogout }) {
               <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#3B82F6", animation: "pulse-ring 1.8s ease infinite", display: "inline-block", flexShrink: 0 }} />
               <span style={{ fontSize: 11, fontWeight: 700, color: "#2563EB", letterSpacing: "0.1em", textTransform: "uppercase" }}>Currently Meeting</span>
             </div>
-            {currentCitizen ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#DBEAFE,#EFF6FF)", border: "2px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#2563EB" }}>
-                    {currentCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                  </div>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>{currentCitizen.citizen_name}</h2>
-                    <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280" }}>{currentCitizen.purpose}</p>
-                  </div>
+            {currentCitizen && ongoingVc ? (
+              // Clash: a citizen is in cabin AND a VC is running — split in half.
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 800, color: "#2563EB", letterSpacing: "0.08em", textTransform: "uppercase" }}>👤 In Cabin</p>
+                  {renderCitizenInCabin(true)}
                 </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #BFDBFE" }}>🕐 {currentCitizen.appointment_time}</span>
-                  {currentCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {currentCitizen.appointment_end_time}</span>}
-                  {currentCitizen.appointment_duration && <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
+                <div style={{ minWidth: 0, borderLeft: "1px solid #EDE9FE", paddingLeft: 16 }}>
+                  <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 800, color: "#7C3AED", letterSpacing: "0.08em", textTransform: "uppercase" }}>🎥 Video Conference</p>
+                  {renderOngoingVc(true)}
                 </div>
-                <ErrorBoundary fallback={null}>
-                  <CurrentCitizenTimer
-                    citizen={currentCitizen}
-                    extraMinutes={extensions[currentCitizen.id ?? currentCitizen.appointment_id] || 0}
-                    onExpire={() => handleCitizenTimeOver(currentCitizen)}
-                  />
-                </ErrorBoundary>
-                <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 13, color: "#1E3A8A", fontWeight: 600 }}>Token</span>
-                  <span style={{ fontSize: 28, fontWeight: 900, color: "#2563EB", letterSpacing: "0.04em" }}>{currentCitizen.appointment_id}</span>
-                </div>
-              </>
+              </div>
+            ) : currentCitizen ? (
+              renderCitizenInCabin(false)
+            ) : ongoingVc ? (
+              renderOngoingVc(false)
             ) : (
               <div style={{ textAlign: "center", padding: "24px 0" }}>
                 <div style={{ fontSize: 40, marginBottom: 10 }}>🪑</div>
                 <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>Cabin Available</h2>
-                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6B7280" }}>No citizen in cabin currently</p>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6B7280" }}>No citizen or VC in progress</p>
               </div>
             )}
           </div>
@@ -2958,7 +3017,7 @@ function MobileDashboard({
           <div style={{ background:"#fff", borderRadius:16, padding:"18px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", border:"2px solid #DBEAFE" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
               <span style={{ width:9, height:9, borderRadius:"50%", background:"#3B82F6", display:"inline-block", animation:"pulse-ring 1.8s ease infinite" }} />
-              <span style={{ fontSize:11, fontWeight:800, color:"#2563EB", letterSpacing:"0.08em", textTransform:"uppercase" }}>Currently in Cabin</span>
+              <span style={{ fontSize:11, fontWeight:800, color:"#2563EB", letterSpacing:"0.08em", textTransform:"uppercase" }}>Currently Meeting</span>
             </div>
             {currentCitizen ? (
               <div>
@@ -2976,6 +3035,40 @@ function MobileDashboard({
                   {currentCitizen.appointment_duration && <span style={{ fontSize:12, fontWeight:600, color:"#059669", background:"#ECFDF5", padding:"4px 10px", borderRadius:99, border:"1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
                   <span style={{ fontSize:12, fontWeight:700, color:"#1E3A8A", background:"#EFF6FF", padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE" }}>#{currentCitizen.appointment_id}</span>
                 </div>
+                {ongoingVc && (
+                  // Clash on mobile: stack the VC below the citizen rather than split.
+                  <div style={{ marginTop:14, paddingTop:14, borderTop:"1px dashed #DDD6FE" }}>
+                    <p style={{ margin:"0 0 8px", fontSize:10, fontWeight:800, color:"#7C3AED", letterSpacing:"0.08em", textTransform:"uppercase" }}>🎥 Also: Video Conference</p>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                      <div style={{ width:38, height:38, borderRadius:"50%", background:"linear-gradient(135deg,#EDE9FE,#F5F3FF)", border:"2px solid #DDD6FE", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>🎥</div>
+                      <div style={{ minWidth:0 }}>
+                        <p style={{ margin:0, fontSize:14, fontWeight:800, color:"#111827", overflow:"hidden", textOverflow:"ellipsis", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{ongoingVc.title}</p>
+                        <p style={{ margin:0, fontSize:11, color:"#6B7280" }}>{ongoingVc.meeting_time}{ongoingVc.meeting_end_time ? ` → ${ongoingVc.meeting_end_time}` : ""}</p>
+                      </div>
+                    </div>
+                    {isMeetLinkValid(ongoingVc.meet_link) && (
+                      <a href={ongoingVc.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#7C3AED,#6D28D9)", color:"#fff", textDecoration:"none", padding:"9px 0", borderRadius:10, textAlign:"center", fontSize:13, fontWeight:700 }}>🔗 Join VC</a>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : ongoingVc ? (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+                  <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#EDE9FE,#F5F3FF)", border:"2px solid #DDD6FE", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🎥</div>
+                  <div style={{ minWidth:0 }}>
+                    <p style={{ margin:0, fontSize:15, fontWeight:800, color:"#111827", overflow:"hidden", textOverflow:"ellipsis", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{ongoingVc.title}</p>
+                    <p style={{ margin:0, fontSize:12, color:"#6B7280" }}>with {ongoingVc.meeting_with || "—"}</p>
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom: isMeetLinkValid(ongoingVc.meet_link) ? 10 : 0 }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>🕐 {ongoingVc.meeting_time}</span>
+                  {ongoingVc.meeting_end_time && <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>→ {ongoingVc.meeting_end_time}</span>}
+                  <span style={{ fontSize:12, fontWeight:700, color:"#7C3AED", background:"#EDE9FE", padding:"4px 10px", borderRadius:99, border:"1px solid #C4B5FD" }}>Ongoing VC</span>
+                </div>
+                {isMeetLinkValid(ongoingVc.meet_link) && (
+                  <a href={ongoingVc.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#7C3AED,#6D28D9)", color:"#fff", textDecoration:"none", padding:"10px 0", borderRadius:12, textAlign:"center", fontSize:14, fontWeight:700 }}>🔗 Join VC</a>
+                )}
               </div>
             ) : (
               <div style={{ textAlign:"center", padding:"10px 0", color:"#9CA3AF" }}>
