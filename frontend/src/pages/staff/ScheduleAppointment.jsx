@@ -9,16 +9,53 @@ import { syncCalendarCreate } from "../../lib/calendarSync";
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 25];
 
-const SLOT_GROUPS = [
-  { section: "morning",   slots: ["12:00 PM","12:05 PM","12:10 PM","12:15 PM","12:20 PM"] },
-  { section: "morning",   slots: ["12:30 PM","12:35 PM","12:40 PM","12:45 PM","12:50 PM"] },
-  { section: "morning",   slots: ["01:00 PM","01:05 PM","01:10 PM","01:15 PM","01:20 PM"] },
-  { section: "afternoon", slots: ["02:30 PM","02:35 PM","02:40 PM","02:45 PM","02:50 PM"] },
-  { section: "afternoon", slots: ["03:00 PM","03:05 PM","03:10 PM","03:15 PM","03:20 PM"] },
-  { section: "afternoon", slots: ["03:30 PM","03:35 PM","03:40 PM","03:45 PM","03:50 PM"] },
-  { section: "afternoon", slots: ["04:00 PM","04:05 PM","04:10 PM","04:15 PM","04:20 PM"] },
-  { section: "afternoon", slots: ["04:30 PM","04:35 PM","04:40 PM","04:45 PM","04:50 PM"] },
-];
+// ── Staff slot range (extra privilege) ────────────────────────────────────────
+// Staff can schedule across the full office day: 10:00 AM → 8:00 PM in 5-minute
+// slots. Last slot STARTS 7:55 PM (ends 8:00 PM). A lunch break mirrors the
+// citizen booking: the morning ends at 1:20 PM and the afternoon resumes 2:30 PM
+// (1:25–2:25 PM is not bookable). getOccupiedSlots already forbids an
+// appointment from spanning the morning/afternoon boundary.
+const STAFF_START_MIN   = 10 * 60;        // 10:00 AM
+const STAFF_END_MIN     = 20 * 60;        // 8:00 PM (exclusive — last start is 7:55)
+const LUNCH_START_MIN   = 13 * 60 + 25;   // 1:25 PM — first non-bookable minute
+const LUNCH_END_MIN     = 14 * 60 + 30;   // 2:30 PM — afternoon resumes
+
+function minutesToSlotStr(min) {
+  let h = Math.floor(min / 60);
+  const m = min % 60;
+  const suffix = h < 12 ? "AM" : "PM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+// Build 5-minute slots, skipping the lunch window, grouped into rows of 5 within
+// each section so the grid renders in neat blocks (like the citizen version).
+function buildStaffSlotGroups() {
+  const groups = [];
+  let row = [];
+  let rowSection = null;
+
+  const flushRow = () => {
+    if (row.length > 0) { groups.push({ section: rowSection, slots: row }); row = []; }
+  };
+
+  for (let min = STAFF_START_MIN; min < STAFF_END_MIN; min += 5) {
+    // Skip the lunch window entirely.
+    if (min >= LUNCH_START_MIN && min < LUNCH_END_MIN) continue;
+
+    const section = min < LUNCH_START_MIN ? "morning" : "afternoon";
+    // Start a fresh row when the section changes or the row is full (5 per row).
+    if (section !== rowSection || row.length === 5) {
+      flushRow();
+      rowSection = section;
+    }
+    row.push(minutesToSlotStr(min));
+  }
+  flushRow();
+  return groups;
+}
+
+const SLOT_GROUPS = buildStaffSlotGroups();
 
 const ALL_SLOTS = SLOT_GROUPS.flatMap(g => g.slots);
 
@@ -38,7 +75,11 @@ function computeEndTime(startSlot, durationMinutes) {
   return `${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${suffix}`;
 }
 
-/** Returns array of slot strings the appointment occupies, or null if it crosses a break. */
+/** Returns array of slot strings the appointment occupies, or null if it crosses
+ *  a break (lunch) or runs past the last slot. Validity = the occupied slots are
+ *  time-contiguous (each exactly 5 minutes after the previous). This naturally
+ *  allows an appointment to span multiple visual rows within one session, while
+ *  still forbidding it from jumping the lunch gap or off the end of the day. */
 function getOccupiedSlots(startSlot, durationMinutes) {
   const slotsNeeded = durationMinutes / 5;
   const startIdx = ALL_SLOTS.indexOf(startSlot);
@@ -51,12 +92,10 @@ function getOccupiedSlots(startSlot, durationMinutes) {
     occupied.push(ALL_SLOTS[idx]);
   }
 
-  // All slots must be in the same group (no crossing breaks/lunch/close)
-  const groupOf = slot => SLOT_GROUPS.findIndex(g => g.slots.includes(slot));
-  const firstGroup = groupOf(occupied[0]);
-  if (firstGroup === -1) return null;
-  for (const s of occupied) {
-    if (groupOf(s) !== firstGroup) return null;
+  // Every consecutive pair must be exactly 5 minutes apart. A gap (e.g. the
+  // lunch break, where the next listed slot is 65 min later) makes it invalid.
+  for (let i = 1; i < occupied.length; i++) {
+    if (slotToMinutes(occupied[i]) - slotToMinutes(occupied[i - 1]) !== 5) return null;
   }
   return occupied;
 }
@@ -179,7 +218,7 @@ function SlotGrid({ occupiedSet, selectedSlot, setSelectedSlot, duration, isToda
       {visibleMorning && (
         <div style={{ marginBottom: 20 }}>
           <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:"0.08em" }}>
-            ☀️ Morning Session — 12:00 PM to 1:30 PM
+            ☀️ Morning Session — 10:00 AM to 1:20 PM
           </p>
           {renderGroup(morningGroups)}
         </div>
@@ -200,7 +239,7 @@ function SlotGrid({ occupiedSet, selectedSlot, setSelectedSlot, duration, isToda
       {visibleAfternoon && (
         <div style={{ marginBottom: 8 }}>
           <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:"0.08em" }}>
-            🌤 Afternoon Session — 2:30 PM to 5:00 PM
+            🌤 Afternoon Session — 2:30 PM to 8:00 PM
           </p>
           {renderGroup(afternoonGroups)}
         </div>
@@ -324,7 +363,7 @@ export default function ScheduleAppointment() {
     const e = {};
     if (!form.name.trim())                               e.name    = "Name is required";
     if (!form.mobile.trim() || !/^\d{10}$/.test(form.mobile)) e.mobile = "Enter a valid 10-digit mobile number";
-    if (!form.purpose)                                   e.purpose = "Please select a purpose";
+    if (!form.purpose.trim())                            e.purpose = "Please enter a purpose";
     if (!form.officer)                                   e.officer = "Please select an officer";
     if (!form.date)                                      e.date    = "Please select a date";
     if (!selectedSlot)                                   e.slot    = "Please select a time slot";
@@ -515,11 +554,9 @@ export default function ScheduleAppointment() {
                 style={{ ...styles.input, borderColor: errors.mobile ? "#FCA5A5" : "#E2E8F0" }} />
             </Field>
             <Field label="Purpose of Visit" required error={errors.purpose}>
-              <select name="purpose" value={form.purpose} onChange={handleChange}
-                style={{ ...styles.input, borderColor: errors.purpose ? "#FCA5A5" : "#E2E8F0" }}>
-                <option value="">Select purpose</option>
-                {["Scholarship","Education","Employment","Certificate","Complaint","Other"].map(p => <option key={p}>{p}</option>)}
-              </select>
+              <input name="purpose" value={form.purpose} onChange={handleChange}
+                placeholder="Type purpose of visit…"
+                style={{ ...styles.input, borderColor: errors.purpose ? "#FCA5A5" : "#E2E8F0" }} />
             </Field>
             <Field label="Assign Officer" required error={errors.officer}>
               <select name="officer" value={form.officer} onChange={handleChange}
