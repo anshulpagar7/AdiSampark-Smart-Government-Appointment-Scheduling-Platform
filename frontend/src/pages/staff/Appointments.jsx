@@ -310,6 +310,10 @@ export default function Appointments() {
   const [filterOfficer, setFilterOfficer] = useState("All");
   const [selectedDate, setSelectedDate] = useState(toDateString(new Date()));
 
+  // Edit + delete modals (staff corrections / removals)
+  const [editAppt, setEditAppt]     = useState(null); // appointment being edited
+  const [deleteAppt, setDeleteAppt] = useState(null); // appointment pending delete confirm
+
   // Track which appointment IDs the auto-engine has already transitioned
   // so we don't fire duplicate updates on every tick
   const autoTransitionedRef = useRef(new Set());
@@ -502,6 +506,89 @@ export default function Appointments() {
       }
     }
 
+    fetchAppointments();
+  };
+
+  // ── Delete an appointment (hard delete) ───────────────────────────────────
+  // Removes the row and its calendar event. Uses .select() to detect the common
+  // RLS case where the DB silently deletes 0 rows (missing DELETE policy).
+  const handleDelete = async (appointment) => {
+    if (!appointment?.id) return;
+
+    // Best-effort calendar cleanup first so we don't orphan the event.
+    if (appointment.google_event_id) {
+      syncCalendarDelete({
+        google_event_id: appointment.google_event_id,
+        appointment_id:  appointment.appointment_id,
+      }).catch(e => console.error("[handleDelete] calendar delete:", e));
+    }
+
+    const { data: deletedRows, error } = await supabase
+      .from("appointments")
+      .delete()
+      .eq("id", appointment.id)
+      .select();
+
+    if (error) {
+      console.error("[handleDelete] error:", error);
+      alert("Failed to delete: " + error.message);
+      return;
+    }
+    if (!deletedRows || deletedRows.length === 0) {
+      alert(
+        "Nothing was deleted. The database blocked the delete — this is almost " +
+        "always a missing Row-Level Security DELETE policy on the 'appointments' " +
+        "table in Supabase. Add a DELETE policy and try again."
+      );
+      return;
+    }
+
+    setDeleteAppt(null);
+    fetchAppointments();
+  };
+
+  // ── Save edits to an appointment (name / mobile / purpose / from) ──────────
+  // Keeps the calendar event in step. Does NOT change time/date/status here —
+  // this is for correcting details like a mistyped name.
+  const handleSaveEdit = async (form) => {
+    if (!form?.id) return;
+
+    const patch = {
+      citizen_name: (form.citizen_name || "").trim(),
+      mobile:       (form.mobile || "").trim() || null,
+      purpose:      (form.purpose || "").trim() || null,
+      location:     (form.location || "").trim() || null,
+    };
+
+    const { error } = await supabase
+      .from("appointments")
+      .update(patch)
+      .eq("id", form.id);
+
+    if (error) {
+      console.error("[handleSaveEdit] error:", error);
+      alert("Failed to save changes: " + error.message);
+      return;
+    }
+
+    // Sync corrected details to the calendar event if one exists.
+    if (form.google_event_id) {
+      syncCalendarUpdate({
+        google_event_id:      form.google_event_id,
+        appointment_id:       form.appointment_id,
+        citizen_name:         patch.citizen_name,
+        purpose:              patch.purpose,
+        appointment_date:     form.appointment_date,
+        appointment_time:     form.appointment_time,
+        appointment_end_time: form.appointment_end_time,
+        appointment_duration: form.appointment_duration,
+        officer_name:         form.officer_name,
+        mobile:               patch.mobile,
+        location:             patch.location,
+      }).catch(e => console.error("[handleSaveEdit] calendar sync:", e));
+    }
+
+    setEditAppt(null);
     fetchAppointments();
   };
 
@@ -755,6 +842,9 @@ export default function Appointments() {
                         {a.status === "Reschedule Required" && (
                           <span style={{ color: "#9333EA", fontSize: "16px" }} title="Reschedule Required">🔄</span>
                         )}
+                        {/* Always-available staff controls: fix details / remove */}
+                        <button onClick={() => setEditAppt(a)} style={styles.actionBtnEdit} title="Edit details">✏️ Edit</button>
+                        <button onClick={() => setDeleteAppt(a)} style={styles.actionBtnDelete} title="Delete appointment">🗑️</button>
                       </div>
                     </td>
 
@@ -765,9 +855,139 @@ export default function Appointments() {
           </table>
         </div>
       </div>
+
+      {editAppt && (
+        <EditAppointmentModal
+          appt={editAppt}
+          onClose={() => setEditAppt(null)}
+          onSave={handleSaveEdit}
+        />
+      )}
+
+      {deleteAppt && (
+        <DeleteConfirmModal
+          appt={deleteAppt}
+          onClose={() => setDeleteAppt(null)}
+          onConfirm={() => handleDelete(deleteAppt)}
+        />
+      )}
     </div>
   );
 }
+
+// ─── Edit Appointment Modal ────────────────────────────────────────────────────
+// Corrects details (name / mobile / purpose / arriving-from). Time, date, and
+// status are intentionally read-only here to avoid clashing with the slot/queue
+// logic — this is for fixing a mistyped name etc.
+
+function EditAppointmentModal({ appt, onClose, onSave }) {
+  const [form, setForm] = useState({
+    id:                   appt.id,
+    appointment_id:       appt.appointment_id,
+    citizen_name:         appt.citizen_name || "",
+    mobile:               appt.mobile || "",
+    purpose:              appt.purpose || "",
+    location:             appt.location || "",
+    // carried through for calendar sync (not editable here)
+    appointment_date:     appt.appointment_date,
+    appointment_time:     appt.appointment_time,
+    appointment_end_time: appt.appointment_end_time,
+    appointment_duration: appt.appointment_duration,
+    officer_name:         appt.officer_name,
+    google_event_id:      appt.google_event_id,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const change = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function submit() {
+    if (saving) return;
+    if (!form.citizen_name.trim()) { alert("Name cannot be empty."); return; }
+    setSaving(true);
+    await onSave(form);
+    setSaving(false);
+  }
+
+  return (
+    <div style={modal.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={modal.box}>
+        <div style={modal.header}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#111827" }}>✏️ Edit Appointment</h2>
+          <button onClick={onClose} style={modal.close}>✕</button>
+        </div>
+        <div style={modal.body}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#6B7280" }}>
+            Token <strong>{appt.appointment_id}</strong> · {appt.appointment_time}
+            {appt.appointment_end_time ? ` – ${appt.appointment_end_time}` : ""}
+          </p>
+          <label style={modal.label}>Full Name</label>
+          <input value={form.citizen_name} onChange={change("citizen_name")} style={modal.input} placeholder="Citizen name" />
+
+          <label style={modal.label}>Mobile</label>
+          <input value={form.mobile} onChange={change("mobile")} style={modal.input} placeholder="10-digit mobile" />
+
+          <label style={modal.label}>Purpose</label>
+          <input value={form.purpose} onChange={change("purpose")} style={modal.input} placeholder="Purpose of visit" />
+
+          <label style={modal.label}>Arriving From</label>
+          <input value={form.location} onChange={change("location")} style={modal.input} placeholder="City / village / area" />
+        </div>
+        <div style={modal.footer}>
+          <button onClick={onClose} style={modal.cancelBtn}>Cancel</button>
+          <button onClick={submit} disabled={saving} style={{ ...modal.saveBtn, ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete Confirmation Modal ─────────────────────────────────────────────────
+
+function DeleteConfirmModal({ appt, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={modal.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ ...modal.box, maxWidth: 420 }}>
+        <div style={{ padding: "28px 26px 22px", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🗑️</div>
+          <h3 style={{ margin: "0 0 8px", fontSize: 19, fontWeight: 800, color: "#111827" }}>Delete appointment?</h3>
+          <p style={{ margin: "0 0 4px", fontSize: 14, color: "#374151" }}>
+            <strong>{appt.citizen_name}</strong> · Token {appt.appointment_id}
+          </p>
+          <p style={{ margin: "0 0 22px", fontSize: 13, color: "#6B7280" }}>
+            This permanently removes the appointment and its calendar event. This can't be undone.
+          </p>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button onClick={onClose} style={{ ...modal.cancelBtn, flex: 1 }}>Cancel</button>
+            <button
+              onClick={async () => { setBusy(true); await onConfirm(); setBusy(false); }}
+              disabled={busy}
+              style={{ ...modal.deleteBtn, flex: 1, ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
+            >
+              {busy ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const modal = {
+  overlay:   { position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9998, padding: 20 },
+  box:       { background: "#fff", borderRadius: 18, width: "100%", maxWidth: 460, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.25)" },
+  header:    { padding: "20px 24px 14px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  close:     { background: "#F1F5F9", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 14, color: "#64748B" },
+  body:      { padding: "16px 24px", overflowY: "auto" },
+  label:     { display: "block", margin: "12px 0 6px", fontSize: 12, fontWeight: 700, color: "#374151" },
+  input:     { width: "100%", padding: "10px 13px", border: "1.5px solid #E2E8F0", borderRadius: 10, fontSize: 14, background: "#F8FAFC", color: "#111827", outline: "none", boxSizing: "border-box" },
+  footer:    { padding: "14px 24px 20px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "flex-end", gap: 12 },
+  cancelBtn: { background: "#F1F5F9", color: "#374151", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontWeight: 600, fontSize: 14 },
+  saveBtn:   { background: "linear-gradient(135deg,#2563EB,#1E3A8A)", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14 },
+  deleteBtn: { background: "linear-gradient(135deg,#DC2626,#B91C1C)", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14 },
+};
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -824,6 +1044,8 @@ const styles = {
   actionBtnBlue:  { background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
   actionBtnGreen: { background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
   actionBtnRed:   { background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+  actionBtnEdit:  { background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE", padding: "6px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+  actionBtnDelete:{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "6px 9px", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
   emptyCell: { padding: "48px", textAlign: "center" },
   emptyState: { display: "flex", flexDirection: "column", alignItems: "center" },
 };
