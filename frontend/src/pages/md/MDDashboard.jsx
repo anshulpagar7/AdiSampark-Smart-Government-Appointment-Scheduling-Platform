@@ -52,6 +52,33 @@ function isMeetLinkValid(link) {
   return link && link.trim() !== "" && link.trim().toLowerCase() !== "no";
 }
 
+// Time-derived status for an executive meeting. The DB stores a static status
+// (usually "Upcoming") that never changes on its own, so we compute the real
+// state from the clock — mirrors the staff ExecutiveMeetings page:
+//   • Cancelled stays Cancelled
+//   • before start        → Upcoming
+//   • between start & end  → Ongoing
+//   • after end            → Completed
+// A meeting explicitly marked Completed/Cancelled in the DB is respected.
+function getMeetingEffectiveStatus(m) {
+  if (!m) return "Upcoming";
+  if (m.status === "Cancelled") return "Cancelled";
+  if (m.status === "Completed") return "Completed";
+
+  const start = parseTimeToMinutes(m.meeting_time);
+  const end   = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : start + 30;
+
+  // Compare against today's date if the meeting carries one.
+  const today = getTodayLocalDate();
+  if (m.meeting_date && m.meeting_date < today) return "Completed";
+  if (m.meeting_date && m.meeting_date > today) return "Upcoming";
+
+  const now = nowMinutes();
+  if (now < start) return "Upcoming";
+  if (now >= start && now <= end) return "Ongoing";
+  return "Completed";
+}
+
 function sortByTime(arr, key) {
   // Numeric time sort — the columns store text like "01:00 PM", and a plain
   // localeCompare puts "01:00 PM" before "12:00 PM". Parse to minutes instead.
@@ -2096,6 +2123,62 @@ export default function MDDashboard({ onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments, extensions]);
 
+  // ── Auto-complete engine for EXECUTIVE MEETINGS ───────────────────────────
+  // Appointments have an auto-END engine; meetings previously did not, so a past
+  // meeting still read "Upcoming" in the database (only the card *computed*
+  // Completed on the fly). This flips a meeting's stored status to "Completed"
+  // once its end time has passed (end time, or start + 30 min when no end is
+  // set), with the same 2-minute grace as appointments. Cancelled / already-
+  // Completed meetings are left alone. Keeps stats, the Executive Meetings page,
+  // and every raw-status reader in agreement with what the card shows.
+  const meetingAutoRef = useRef(new Set());
+  useEffect(() => {
+    async function runMeetingAutoComplete() {
+      const now = nowMinutes();
+      const today = getTodayLocalDate();
+      const toComplete = [];
+
+      for (const m of meetings) {
+        if (!m?.id) continue;
+        if (m.status === "Completed" || m.status === "Cancelled") continue;
+        if (!m.meeting_time) continue;
+        // Only auto-complete meetings dated today or earlier (never future).
+        if (m.meeting_date && m.meeting_date > today) continue;
+
+        const endMin = m.meeting_end_time
+          ? parseTimeToMinutes(m.meeting_end_time)
+          : parseTimeToMinutes(m.meeting_time) + 30;
+
+        const pastByDate = m.meeting_date && m.meeting_date < today;
+        const key = `meeting-auto-complete-${m.id}`;
+        if ((pastByDate || now >= endMin + AUTO_END_GRACE_MIN) && !meetingAutoRef.current.has(key)) {
+          toComplete.push({ m, key });
+        }
+      }
+
+      if (toComplete.length === 0) return;
+
+      for (const { m, key } of toComplete) {
+        meetingAutoRef.current.add(key);
+        const { error } = await supabase
+          .from("executive_meetings")
+          .update({ status: "Completed" })
+          .eq("id", m.id);
+        if (error) {
+          console.error("[MDDashboard MeetingAuto] complete failed:", error);
+          meetingAutoRef.current.delete(key); // retry next tick
+        }
+      }
+
+      fetchAll();
+    }
+
+    runMeetingAutoComplete();
+    const t = setInterval(runMeetingAutoComplete, 30000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings]);
+
   // Completes the appointment shown in the generic popup (appointment-type).
   // Restored: it is referenced by <Popup onComplete={...}> and its absence threw
   // a ReferenceError at render time (blank screen) whenever any popup appeared.
@@ -2452,8 +2535,17 @@ export default function MDDashboard({ onLogout }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
               {meetings.map((meeting, index) => {
                 const linkValid = isMeetLinkValid(meeting.meet_link);
+                const effStatus = getMeetingEffectiveStatus(meeting);
+                const isDone    = effStatus === "Completed" || effStatus === "Cancelled";
+                const statusColors = {
+                  Upcoming:  { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" },
+                  Ongoing:   { bg: "#DBEAFE", color: "#2563EB", border: "#93C5FD" },
+                  Completed: { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0" },
+                  Cancelled: { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA" },
+                };
+                const sc = statusColors[effStatus] || statusColors.Upcoming;
                 return (
-                  <div key={meeting.id ?? index} className="meeting-card" style={{ background: "linear-gradient(135deg,#F8FAFF,#F0F4FF)", padding: "22px 24px", borderRadius: 18, border: "1px solid #DBEAFE", boxShadow: "0 4px 16px rgba(37,99,235,0.07)" }}>
+                  <div key={meeting.id ?? index} className="meeting-card" style={{ background: "linear-gradient(135deg,#F8FAFF,#F0F4FF)", padding: "22px 24px", borderRadius: 18, border: "1px solid #DBEAFE", boxShadow: "0 4px 16px rgba(37,99,235,0.07)", opacity: isDone ? 0.85 : 1 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
                       <div>
                         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>{getMeetingTimeLabel(meeting.meeting_time)}</p>
@@ -2464,9 +2556,17 @@ export default function MDDashboard({ onLogout }) {
                     <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>🏛️</span><span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.meeting_with}</span></div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>🎥</span><span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.mode ?? "Google Meet"}</span></div>
-                      {meeting.status && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>📌</span><span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.status}</span></div>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14 }}>📌</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: sc.color, background: sc.bg, border: `1px solid ${sc.border}`, padding: "2px 10px", borderRadius: 99 }}>{effStatus}</span>
+                      </div>
                     </div>
-                    {linkValid ? (
+                    {isDone ? (
+                      // Meeting is over/cancelled — Join is disabled and greyed out.
+                      <button disabled style={{ display: "block", background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", textAlign: "center", opacity: 0.7, boxSizing: "border-box" }}>
+                        {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
+                      </button>
+                    ) : linkValid ? (
                       <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" className="join-btn" style={{ display: "block", background: "linear-gradient(135deg,#10B981,#059669)", color: "white", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", boxShadow: "0 4px 12px rgba(16,185,129,0.35)", width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Join Meeting</a>
                     ) : (
                       <button disabled style={{ background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", opacity: 0.7 }}>🚫 No Meeting Link</button>
@@ -2943,8 +3043,16 @@ function MobileDashboard({
           ) : (
             meetings.map((m, i) => {
               const linkValid = isMeetLinkValid(m.meet_link);
+              const effStatus = getMeetingEffectiveStatus(m);
+              const isDone    = effStatus === "Completed" || effStatus === "Cancelled";
+              const mSc = {
+                Upcoming:  { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" },
+                Ongoing:   { bg: "#DBEAFE", color: "#2563EB", border: "#93C5FD" },
+                Completed: { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0" },
+                Cancelled: { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA" },
+              }[effStatus] || { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" };
               return (
-                <div key={m.id ?? i} style={{ background:"#fff", borderRadius:16, padding:"18px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", border:"1px solid #DBEAFE" }}>
+                <div key={m.id ?? i} style={{ background:"#fff", borderRadius:16, padding:"18px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", border:"1px solid #DBEAFE", opacity: isDone ? 0.85 : 1 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ flex:1 }}>
                       <p style={{ margin:"0 0 2px", fontSize:11, fontWeight:700, color:"#6B7280", textTransform:"uppercase", letterSpacing:"0.06em" }}>{getMeetingTimeLabel(m.meeting_time)}</p>
@@ -2952,8 +3060,13 @@ function MobileDashboard({
                     </div>
                     <span style={{ background:"#EFF6FF", color:"#2563EB", fontSize:13, fontWeight:700, padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE", flexShrink:0, marginLeft:10 }}>{m.meeting_time}</span>
                   </div>
-                  <p style={{ margin:"0 0 12px", fontSize:13, color:"#374151" }}>🏛️ {m.meeting_with}</p>
-                  {linkValid ? (
+                  <p style={{ margin:"0 0 8px", fontSize:13, color:"#374151" }}>🏛️ {m.meeting_with}</p>
+                  <span style={{ display:"inline-block", marginBottom:12, fontSize:12, fontWeight:700, color:mSc.color, background:mSc.bg, border:`1px solid ${mSc.border}`, padding:"2px 10px", borderRadius:99 }}>{effStatus}</span>
+                  {isDone ? (
+                    <div style={{ background:"#E5E7EB", borderRadius:12, padding:"11px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:700 }}>
+                      {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
+                    </div>
+                  ) : linkValid ? (
                     <a href={m.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", textDecoration:"none", padding:"11px 0", borderRadius:12, textAlign:"center", fontSize:14, fontWeight:700, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" }}>
                       🔗 Join Meeting
                     </a>
