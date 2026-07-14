@@ -83,6 +83,46 @@ function nowMinutes() {
   return n.getHours() * 60 + n.getMinutes();
 }
 
+// Convert an in_cabin_at timestamp (ISO string) into minutes-since-midnight
+// for TODAY. Returns null if absent or not parseable.
+function inCabinAtMinutes(inCabinAt) {
+  if (!inCabinAt) return null;
+  const d = new Date(inCabinAt);
+  if (isNaN(d.getTime())) return null;
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+// Effective end (minutes since midnight) for an "In Cabin" appointment.
+// When the citizen was admitted EARLY, the countdown should reflect the booked
+// DURATION from the admit moment — not the gap to the original clock time.
+// Rule (per product decision): whichever ends FIRST —
+//     min(in_cabin_at + booked duration, original booked clock end)
+// Falls back gracefully:
+//   • no in_cabin_at  → use booked clock end / start+duration (old behaviour)
+//   • no booked end    → use in_cabin_at + duration
+//   • neither          → null (caller treats as "no timer")
+// `extraMin` folds in local ⏱ Extend minutes not yet reflected in the row.
+function effectiveInCabinEndMin(appt, extraMin = 0) {
+  const startMin = appt.appointment_time ? parseTimeToMinutes(appt.appointment_time) : null;
+  const durMin   = appt.appointment_duration ? Number(appt.appointment_duration) : null;
+
+  // Booked clock end = stored end, else start + duration.
+  const storedEnd = appt.appointment_end_time ? parseTimeToMinutes(appt.appointment_end_time) : null;
+  const bookedEnd = storedEnd ?? (startMin !== null && durMin ? startMin + durMin : null);
+
+  const admitMin = inCabinAtMinutes(appt.in_cabin_at);
+  // Duration-based end measured from the actual admit time.
+  const admitEnd = admitMin !== null && durMin ? admitMin + durMin : null;
+
+  let end;
+  if (admitEnd !== null && bookedEnd !== null) end = Math.min(admitEnd, bookedEnd);
+  else if (admitEnd !== null)                  end = admitEnd;
+  else                                         end = bookedEnd;
+
+  if (end === null || end < 0) return null;
+  return end + (extraMin || 0);
+}
+
 // Convert an <input type="time"> value ("14:30" or "09:05") into the "hh:mm AM/PM"
 // string the app stores in Supabase (executive_meetings.meeting_time etc.).
 // Passing through an already-formatted "02:30 PM" value returns it unchanged.
@@ -791,8 +831,9 @@ function LiveStatusBadge({ currentCitizen, meetings, onCompleteCitizen, onNextCi
 
   if (currentCitizen) {
     let timeRemaining = "—";
-    if (currentCitizen.appointment_end_time) {
-      const endMin  = parseTimeToMinutes(currentCitizen.appointment_end_time);
+    const endMin = effectiveInCabinEndMin(currentCitizen);
+    const hasTimer = endMin !== null;
+    if (hasTimer) {
       const diffSec = (endMin - now) * 60 - (new Date().getSeconds());
       if (diffSec > 0) {
         const m = Math.floor(diffSec / 60);
@@ -815,7 +856,7 @@ function LiveStatusBadge({ currentCitizen, meetings, onCompleteCitizen, onNextCi
           <span style={liveStyles.rowLabel}>Current Citizen</span>
           <span style={liveStyles.rowValue}>{currentCitizen.citizen_name}</span>
         </div>
-        {currentCitizen.appointment_end_time && (
+        {hasTimer && (
           <div style={liveStyles.row}>
             <span style={liveStyles.rowLabel}>Time Remaining</span>
             <span style={{ ...liveStyles.rowValue, fontFamily: "monospace", fontSize: 16, color: timeRemaining === "00:00" ? "#EF4444" : "#4ADE80", letterSpacing: "0.08em" }}>
@@ -1838,7 +1879,7 @@ export default function MDDashboard({ onLogout }) {
     if (!c) return;
     const next = nextInQueue;
     const ops = [supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id)];
-    if (next) ops.push(supabase.from("appointments").update({ status: "In Cabin" }).eq("id", next.id));
+    if (next) ops.push(supabase.from("appointments").update({ status: "In Cabin", in_cabin_at: new Date().toISOString() }).eq("id", next.id));
     const results = await Promise.all(ops);
     results.forEach(r => { if (r.error) console.error("[MDDashboard] next-citizen error:", r.error); });
     closeTimeOverPopup(true);
@@ -1899,7 +1940,7 @@ export default function MDDashboard({ onLogout }) {
     const next = nextInQueue;
     const ops = [];
     if (c?.id) ops.push(supabase.from("appointments").update({ status: "Completed" }).eq("id", c.id));
-    if (next?.id) ops.push(supabase.from("appointments").update({ status: "In Cabin" }).eq("id", next.id));
+    if (next?.id) ops.push(supabase.from("appointments").update({ status: "In Cabin", in_cabin_at: new Date().toISOString() }).eq("id", next.id));
     if (ops.length === 0) return;
     const results = await Promise.all(ops);
     results.forEach(r => { if (r.error) console.error("[MDDashboard] badge next citizen:", r.error); });
@@ -1945,23 +1986,16 @@ export default function MDDashboard({ onLogout }) {
 
       const toTransition = [];
 
-      // Pass 1 — auto-END (effective end = latest of stored end time and
-      // start + duration, so ⏱ Extend — which bumps duration — is honoured;
-      // local not-yet-fetched extensions are added on top).
+      // Pass 1 — auto-END. Effective end honours early admits: it's the booked
+      // DURATION measured from in_cabin_at, capped at the original booked clock
+      // end (see effectiveInCabinEndMin). Local ⏱ Extend minutes are folded in.
       let cabinOccupied = false;
       for (const a of todays) {
         if (a.status !== "In Cabin") continue;
 
-        const startMin  = a.appointment_time ? parseTimeToMinutes(a.appointment_time) : null;
-        const storedEnd = a.appointment_end_time ? parseTimeToMinutes(a.appointment_end_time) : null;
-        const byDuration =
-          startMin !== null && a.appointment_duration
-            ? startMin + Number(a.appointment_duration)
-            : null;
-
-        let endMin = Math.max(storedEnd ?? -1, byDuration ?? -1);
-        if (endMin < 0) { cabinOccupied = true; continue; }
-        endMin += extensions[a.id ?? a.appointment_id] || 0;
+        const extraMin = extensions[a.id ?? a.appointment_id] || 0;
+        const endMin = effectiveInCabinEndMin(a, extraMin);
+        if (endMin === null) { cabinOccupied = true; continue; }
 
         const key = `${a.id}-auto-Completed`;
         if (now >= endMin + AUTO_END_GRACE_MIN && !autoEngineRef.current.has(key)) {
@@ -1992,9 +2026,11 @@ export default function MDDashboard({ onLogout }) {
 
       for (const { appt, newStatus, key } of toTransition) {
         autoEngineRef.current.add(key);
+        const updatePayload = { status: newStatus };
+        if (newStatus === "In Cabin") updatePayload.in_cabin_at = new Date().toISOString();
         const { error } = await supabase
           .from("appointments")
-          .update({ status: newStatus })
+          .update(updatePayload)
           .eq("id", appt.id);
 
         if (error) {
