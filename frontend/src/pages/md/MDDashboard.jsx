@@ -182,14 +182,35 @@ function buildDateTime(dateStr, timeStr) {
   return dt;
 }
 
-// Compute the end Date for an appointment: start time + duration (minutes).
+// Compute the end Date for an appointment, honouring EARLY admits.
+// Rule (matches effectiveInCabinEndMin): the end is the booked DURATION measured
+// from when the citizen actually entered the cabin (in_cabin_at), capped at the
+// original booked clock end — whichever comes FIRST. Falls back to the plain
+// start+duration when in_cabin_at is absent (old rows / admitted exactly on time).
 // extraMinutes lets the UI apply a local "extend" before Supabase round-trips.
 function getAppointmentEndDate(appt, extraMinutes = 0) {
   if (!appt) return null;
   const start = buildDateTime(appt.appointment_date, appt.appointment_time);
   if (!start) return null;
-  const durMin = Number(appt.appointment_duration) || 0;
-  return new Date(start.getTime() + (durMin + extraMinutes) * 60000);
+
+  const durMin  = Number(appt.appointment_duration) || 0;
+  const addMs   = (durMin + extraMinutes) * 60000;
+
+  // Original booked clock end = booked start + duration.
+  const bookedEnd = new Date(start.getTime() + addMs);
+
+  // Duration-based end from the actual admit moment.
+  let admitEnd = null;
+  if (appt.in_cabin_at) {
+    const admit = new Date(appt.in_cabin_at);
+    if (!isNaN(admit.getTime())) {
+      admitEnd = new Date(admit.getTime() + addMs);
+    }
+  }
+
+  // Whichever ends first.
+  if (admitEnd) return new Date(Math.min(admitEnd.getTime(), bookedEnd.getTime()));
+  return bookedEnd;
 }
 
 // Format a positive seconds value as HH:MM:SS (e.g. 765 -> "00:12:45").
@@ -990,7 +1011,16 @@ const liveStyles = {
 
 function CurrentCitizenTimer({ citizen, extraMinutes = 0, onExpire }) {
   const endDate   = getAppointmentEndDate(citizen, extraMinutes);
-  const startDate = buildDateTime(citizen?.appointment_date, citizen?.appointment_time);
+  // Window start: the actual admit time when known (early admits), else the
+  // booked start. This keeps the progress bar's total window correct — for an
+  // early admit the window is [in_cabin_at, in_cabin_at + duration], not the
+  // long gap from the booked clock time.
+  let startDate = null;
+  if (citizen?.in_cabin_at) {
+    const admit = new Date(citizen.in_cabin_at);
+    if (!isNaN(admit.getTime())) startDate = admit;
+  }
+  if (!startDate) startDate = buildDateTime(citizen?.appointment_date, citizen?.appointment_time);
 
   const { remaining, isOver } = useCountdown(endDate, onExpire);
 
