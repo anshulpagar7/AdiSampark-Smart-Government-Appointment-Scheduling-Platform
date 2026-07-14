@@ -90,6 +90,7 @@ export default function ExecutiveMeetings() {
 
   const [conflictModal, setConflictModal] = useState(false);
   const [conflictAppointments, setConflictAppointments] = useState([]);
+  const [conflictMeetings, setConflictMeetings] = useState([]);
   const [pendingSave, setPendingSave] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -168,6 +169,16 @@ export default function ExecutiveMeetings() {
 
     if (apptError) console.log(apptError);
 
+    // Fetch all OTHER executive meetings on the same date (VC-vs-VC check).
+    // Excludes the meeting being edited (editId) so a meeting never "conflicts
+    // with itself", and excludes Cancelled meetings since a cancelled slot is free.
+    const { data: otherMeetings, error: meetError } = await supabase
+      .from("executive_meetings")
+      .select("id, title, meeting_with, meeting_time, meeting_end_time, status")
+      .eq("meeting_date", form.meeting_date);
+
+    if (meetError) console.log(meetError);
+
     const meetingStart = timeToMinutes(form.meeting_time);
     const meetingEnd   = timeToMinutes(form.meeting_end_time);
 
@@ -191,8 +202,20 @@ export default function ExecutiveMeetings() {
       return apptStart < meetingEnd && apptEnd > meetingStart;
     });
 
-    if (conflicts.length > 0) {
+    // VC-vs-VC overlap: same interval-intersection test against other meetings.
+    const meetingConflicts = (otherMeetings || []).filter(m => {
+      if (editId && m.id === editId) return false; // never conflicts with itself
+      if (m.status === "Cancelled") return false;    // freed slot
+
+      const otherStart = timeToMinutes(m.meeting_time);
+      const otherEnd    = m.meeting_end_time ? timeToMinutes(m.meeting_end_time) : otherStart + 30;
+
+      return otherStart < meetingEnd && otherEnd > meetingStart;
+    });
+
+    if (conflicts.length > 0 || meetingConflicts.length > 0) {
       setConflictAppointments(conflicts);
+      setConflictMeetings(meetingConflicts);
       setPendingSave({ ...form });
       setConflictModal(true);
       return;
@@ -305,14 +328,15 @@ export default function ExecutiveMeetings() {
   };
 
   const handleProceed = async () => {
-    // Save the VC only. Overlapping citizen appointments are intentionally left
-    // untouched — they stay in "Waiting" and auto-complete normally when their
-    // time comes. The VC simply blocks those slots for NEW citizen bookings
-    // (shown as "Ongoing VC" in CitizenBooking).
+    // Save the VC/meeting anyway. Overlapping citizen appointments are intentionally
+    // left untouched — they stay in "Waiting" and auto-complete normally when their
+    // time comes. Overlapping VCs are also left as-is — both simply run in parallel
+    // and Madam sees both (split view) on her dashboard.
     await saveMeeting(pendingSave);
 
     setConflictModal(false);
     setConflictAppointments([]);
+    setConflictMeetings([]);
     setPendingSave(null);
     fetchMeetings();
   };
@@ -320,6 +344,7 @@ export default function ExecutiveMeetings() {
   const handleCancelConflict = () => {
     setConflictModal(false);
     setConflictAppointments([]);
+    setConflictMeetings([]);
     setPendingSave(null);
   };
 
@@ -661,36 +686,75 @@ export default function ExecutiveMeetings() {
         <div style={styles.modalOverlay}>
           <div style={{ ...styles.modal, maxWidth: "520px" }}>
             <div style={styles.modalHeader}>
-              <h2 style={{ ...styles.modalTitle, color: "#D97706" }}>⚠️ Appointment Conflict Detected</h2>
+              <h2 style={{ ...styles.modalTitle, color: "#D97706" }}>⚠️ Schedule Overlap Detected</h2>
               <button onClick={handleCancelConflict} style={styles.modalClose}>✕</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ margin: "0 0 16px", fontSize: "14px", color: "#374151" }}>
-                This VC overlaps with existing citizen appointments. These citizens will <strong>stay in the waiting queue</strong> and complete normally when their time comes:
+                This meeting overlaps with the following. You can still schedule it — everything stays booked and Madam will see both on her dashboard.
               </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
-                {conflictAppointments.map(a => (
-                  <div key={a.id} style={styles.conflictRow}>
-                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                      <div style={styles.conflictAvatar}>{(a.citizen_name || "?")[0]}</div>
-                      <div>
-                        <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "14px", color: "#111827" }}>{a.citizen_name}</p>
-                        <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>{a.purpose}</p>
+
+              {conflictMeetings.length > 0 && (
+                <>
+                  <p style={{ ...styles.conflictSectionLabel, color: "#7C3AED" }}>🎥 Overlapping Meetings / VCs ({conflictMeetings.length})</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                    {conflictMeetings.map(m => (
+                      <div key={m.id} style={styles.conflictRowMeeting}>
+                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                          <div style={styles.conflictAvatarMeeting}>{(m.title || "?")[0]}</div>
+                          <div>
+                            <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "14px", color: "#111827" }}>{m.title}</p>
+                            <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>with {m.meeting_with}</p>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <p style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: "700", color: "#7C3AED" }}>
+                            {m.meeting_time}{m.meeting_end_time ? ` – ${m.meeting_end_time}` : ""}
+                          </p>
+                          <span style={{ ...styles.conflictStatusBadge, background: "#EDE9FE", color: "#7C3AED" }}>{m.status || "Upcoming"}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      {/* Show full time range if available */}
-                      <p style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: "700", color: "#2563EB" }}>
-                        {a.appointment_time}{a.appointment_end_time ? ` – ${a.appointment_end_time}` : ""}
-                      </p>
-                      <span style={styles.conflictStatusBadge}>{a.status}</span>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+
+              {conflictAppointments.length > 0 && (
+                <>
+                  <p style={{ ...styles.conflictSectionLabel, color: "#D97706" }}>👤 Overlapping Citizens ({conflictAppointments.length})</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                    {conflictAppointments.map(a => (
+                      <div key={a.id} style={styles.conflictRow}>
+                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                          <div style={styles.conflictAvatar}>{(a.citizen_name || "?")[0]}</div>
+                          <div>
+                            <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "14px", color: "#111827" }}>{a.citizen_name}</p>
+                            <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>{a.purpose}</p>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          {/* Show full time range if available */}
+                          <p style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: "700", color: "#2563EB" }}>
+                            {a.appointment_time}{a.appointment_end_time ? ` – ${a.appointment_end_time}` : ""}
+                          </p>
+                          <span style={styles.conflictStatusBadge}>{a.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
               <div style={styles.conflictWarning}>
                 <span>ℹ️</span>
-                <span>These citizens keep their spot in the <strong>waiting queue</strong>. New citizens won't be able to book this VC time — those slots show as <strong>"Ongoing VC"</strong> in citizen booking.</span>
+                <span>
+                  {conflictAppointments.length > 0 && "Citizens keep their spot in the "}
+                  {conflictAppointments.length > 0 && <strong>waiting queue</strong>}
+                  {conflictAppointments.length > 0 && conflictMeetings.length > 0 && " and "}
+                  {conflictMeetings.length > 0 && "the other meeting(s) stay scheduled as-is"}
+                  {(conflictAppointments.length > 0 || conflictMeetings.length > 0) && ". "}
+                  Madam's dashboard will show both side-by-side when their times overlap.
+                </span>
               </div>
             </div>
             <div style={styles.modalFooter}>
@@ -822,5 +886,8 @@ const styles = {
   conflictRow:      { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF7ED", border: "1px solid #FDE68A", borderRadius: "10px", padding: "12px 16px" },
   conflictAvatar:   { width: "36px", height: "36px", borderRadius: "8px", background: "linear-gradient(135deg,#D97706,#B45309)", color: "#fff", fontWeight: "700", fontSize: "15px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   conflictStatusBadge: { background: "#FEF3C7", color: "#D97706", fontSize: "11px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px" },
+  conflictRowMeeting:      { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "10px", padding: "12px 16px" },
+  conflictAvatarMeeting:   { width: "36px", height: "36px", borderRadius: "8px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontWeight: "700", fontSize: "15px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  conflictSectionLabel:    { margin: "0 0 8px", fontSize: "11px", fontWeight: "800", letterSpacing: "0.06em", textTransform: "uppercase" },
   conflictWarning:  { display: "flex", gap: "10px", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: "10px", padding: "12px 16px", fontSize: "13px", color: "#92400E", alignItems: "flex-start" },
 };

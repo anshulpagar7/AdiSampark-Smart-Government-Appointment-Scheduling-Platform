@@ -1229,6 +1229,14 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
+  // ── Overlap detection (VC-vs-VC and VC/other-vs-citizen) ──────────────────
+  // Mirrors the staff ExecutiveMeetings page: overlapping items are shown in a
+  // confirmation popup, but Madam can still proceed — nothing is auto-modified.
+  const [conflictAppts, setConflictAppts]       = useState([]);
+  const [conflictMeetings, setConflictMeetings] = useState([]);
+  const [showConflict, setShowConflict]         = useState(false);
+  const [pendingPayload, setPendingPayload]     = useState(null);
+
   const isVc = step === "vc";
 
   function handleChange(e) {
@@ -1250,6 +1258,9 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
     return e;
   }
 
+  // Step 1: validate, then check for overlaps against citizen appointments AND
+  // other executive meetings/VCs on the same date. If any exist, hold the
+  // payload and show the overlap popup instead of saving immediately.
   async function handleSave() {
     if (saving) return;
     const e = validate();
@@ -1268,6 +1279,55 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
       status:           form.status,
     };
 
+    const mStart = parseTimeToMinutes(payload.meeting_time);
+    const mEnd   = parseTimeToMinutes(payload.meeting_end_time);
+
+    const [apptRes, meetRes] = await Promise.all([
+      supabase
+        .from("appointments")
+        .select("id, citizen_name, purpose, status, appointment_time, appointment_end_time, appointment_duration")
+        .eq("appointment_date", payload.meeting_date),
+      supabase
+        .from("executive_meetings")
+        .select("id, title, meeting_with, meeting_time, meeting_end_time, status")
+        .eq("meeting_date", payload.meeting_date),
+    ]);
+
+    if (apptRes.error) console.error("[ScheduleAdd] conflict check (appointments) error:", apptRes.error);
+    if (meetRes.error) console.error("[ScheduleAdd] conflict check (meetings) error:", meetRes.error);
+
+    const apptConflicts = (apptRes.data || []).filter(a => {
+      const s = parseTimeToMinutes(a.appointment_time);
+      let en;
+      if (a.appointment_end_time && a.appointment_end_time.trim() !== "") en = parseTimeToMinutes(a.appointment_end_time);
+      else if (a.appointment_duration) en = s + Number(a.appointment_duration);
+      else en = s + 5;
+      return s < mEnd && en > mStart;
+    });
+
+    const meetConflicts = (meetRes.data || []).filter(m => {
+      if (m.status === "Cancelled") return false;
+      const s = parseTimeToMinutes(m.meeting_time);
+      const en = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : s + 30;
+      return s < mEnd && en > mStart;
+    });
+
+    if (apptConflicts.length > 0 || meetConflicts.length > 0) {
+      setConflictAppts(apptConflicts);
+      setConflictMeetings(meetConflicts);
+      setPendingPayload(payload);
+      setShowConflict(true);
+      setSaving(false);
+      return;
+    }
+
+    await doSave(payload);
+  }
+
+  // Step 2: the actual insert + calendar sync — called either directly (no
+  // conflicts) or after Madam taps "Proceed Anyway" on the overlap popup.
+  async function doSave(payload) {
+    setSaving(true);
     let insertedRow = null;
     try {
       const { data, error } = await supabase
@@ -1307,8 +1367,23 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
     }
 
     setSaving(false);
+    setShowConflict(false);
+    setConflictAppts([]);
+    setConflictMeetings([]);
+    setPendingPayload(null);
     onSaved?.();
     onClose?.();
+  }
+
+  function handleProceedConflict() {
+    if (pendingPayload) doSave(pendingPayload);
+  }
+
+  function handleCancelConflict() {
+    setShowConflict(false);
+    setConflictAppts([]);
+    setConflictMeetings([]);
+    setPendingPayload(null);
   }
 
   const accent = isVc ? "#7C3AED" : "#2563EB";
@@ -1389,6 +1464,78 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
           </>
         )}
       </div>
+
+      {/* Overlap confirmation popup — VC-vs-VC and VC/other-vs-citizen */}
+      {showConflict && (
+        <div style={mdModal.overlay}>
+          <div style={{ ...mdModal.box, maxWidth: 500 }}>
+            <div style={mdModal.header}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#D97706" }}>⚠️ Schedule Overlap Detected</h2>
+              <button onClick={handleCancelConflict} style={mdModal.close}>✕</button>
+            </div>
+            <div style={{ padding: "18px 26px", overflowY: "auto", maxHeight: "60vh" }}>
+              <p style={{ margin: "0 0 16px", fontSize: 13, color: "#374151" }}>
+                This {isVc ? "VC" : "item"} overlaps with the following. You can still proceed — nothing already scheduled will be changed, and both will show together on the dashboard.
+              </p>
+
+              {conflictMeetings.length > 0 && (
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    🎥 Overlapping Meetings / VCs ({conflictMeetings.length})
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {conflictMeetings.map(m => (
+                      <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10, padding: "10px 14px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#111827" }}>{m.title}</p>
+                          <p style={{ margin: 0, fontSize: 12, color: "#64748B" }}>with {m.meeting_with}</p>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>
+                            {m.meeting_time}{m.meeting_end_time ? ` – ${m.meeting_end_time}` : ""}
+                          </p>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#7C3AED", background: "#EDE9FE", padding: "2px 8px", borderRadius: 10 }}>{m.status || "Upcoming"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {conflictAppts.length > 0 && (
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: "#D97706", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    👤 Overlapping Citizens ({conflictAppts.length})
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {conflictAppts.map(a => (
+                      <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF7ED", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#111827" }}>{a.citizen_name}</p>
+                          <p style={{ margin: 0, fontSize: 12, color: "#64748B" }}>{a.purpose}</p>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#2563EB" }}>
+                            {a.appointment_time}{a.appointment_end_time ? ` – ${a.appointment_end_time}` : ""}
+                          </p>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#D97706", background: "#FEF3C7", padding: "2px 8px", borderRadius: 10 }}>{a.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={mdModal.footer}>
+              <button onClick={handleCancelConflict} style={mdModal.cancelBtn}>Cancel</button>
+              <button onClick={handleProceedConflict} disabled={saving}
+                style={{ ...mdModal.saveBtn, background: "linear-gradient(135deg,#D97706,#B45309)", ...(saving ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}>
+                {saving ? "Saving…" : "Proceed Anyway"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1600,6 +1747,93 @@ function MiniCalendar({ value, maxDate, onPick, onClose }) {
   );
 }
 
+// ─── Stat Card List Popup (MD Dashboard) ───────────────────────────────────
+// Shown when Madam taps a top stat card (Today's Citizens / Waiting /
+// Meetings / Completed) — surfaces the underlying list behind that number.
+function StatListPopup({ type, appointments, meetings, onClose }) {
+  const config = {
+    citizens:  { title: "Today's Citizens",   icon: "👥" },
+    waiting:   { title: "Waiting Citizens",   icon: "⏳" },
+    completed: { title: "Completed Citizens", icon: "✅" },
+    meetings:  { title: "Today's Meetings",   icon: "📋" },
+  }[type] || { title: "List", icon: "📋" };
+
+  const isMeetingType = type === "meetings";
+
+  let rows = [];
+  if (type === "citizens")       rows = appointments;
+  else if (type === "waiting")   rows = appointments.filter(a => a.status === "Waiting");
+  else if (type === "completed") rows = appointments.filter(a => a.status === "Completed");
+  else if (type === "meetings")  rows = meetings;
+
+  rows = sortByTime(rows, isMeetingType ? "meeting_time" : "appointment_time");
+
+  const statusColors = {
+    "Completed": { bg: "#ECFDF5", color: "#059669" },
+    "In Cabin":  { bg: "#DBEAFE", color: "#2563EB" },
+    "Waiting":   { bg: "#FEF3C7", color: "#D97706" },
+    "Cancelled": { bg: "#FEF2F2", color: "#DC2626" },
+    "No Show":   { bg: "#FEF2F2", color: "#DC2626" },
+  };
+
+  return (
+    <div style={mdModal.overlay} onClick={e => { if (e.target === e.currentTarget) onClose?.(); }}>
+      <div style={{ ...mdModal.box, maxWidth: 480 }}>
+        <div style={mdModal.header}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#111827" }}>
+            {config.icon} {config.title}
+          </h2>
+          <button onClick={onClose} style={mdModal.close}>✕</button>
+        </div>
+        <div style={{ padding: "18px 26px 26px", overflowY: "auto", maxHeight: "70vh" }}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            {rows.length} {rows.length === 1 ? "entry" : "entries"}
+          </p>
+          {rows.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "36px 0", color: "#9CA3AF" }}>
+              <div style={{ fontSize: 34 }}>📭</div>
+              <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 600 }}>Nothing here right now</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {rows.map((row, i) => {
+                if (isMeetingType) {
+                  const effStatus = getMeetingEffectiveStatus(row);
+                  return (
+                    <div key={row.id ?? i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 14px", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.title}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>with {row.meeting_with || "—"}</p>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#059669" }}>{row.meeting_time}</p>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#6B7280" }}>{effStatus}</span>
+                      </div>
+                    </div>
+                  );
+                }
+                const sc = statusColors[row.status] || { bg: "#F1F5F9", color: "#64748B" };
+                return (
+                  <div key={row.appointment_id ?? i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 14px", gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.citizen_name}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.purpose}</p>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#374151" }}>{row.appointment_time}</p>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: sc.color, background: sc.bg, padding: "1px 8px", borderRadius: 99 }}>{row.status}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const mdModal = {
   overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9998, padding: 20 },
   box:     { background: "#fff", borderRadius: 20, width: "100%", maxWidth: 520, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.25)" },
@@ -1639,6 +1873,17 @@ export default function MDDashboard({ onLogout }) {
   const [showScheduleAdd, setShowScheduleAdd] = useState(false);
   const [showTourAdd, setShowTourAdd]         = useState(false);
   const [showCalendar, setShowCalendar]       = useState(false);
+
+  // ── Stat card list popup (Total Citizens / Waiting / Meetings / Completed) ─
+  const [statPanel, setStatPanel] = useState(null); // 'citizens' | 'waiting' | 'meetings' | 'completed' | null
+
+  // ── Executive Meetings section — independent date browsing ────────────────
+  // Kept separate from `timelineDate` so switching the date here does not
+  // affect the chronological Schedule/Timeline section below it.
+  const [meetingsSectionDate, setMeetingsSectionDate]     = useState(getTodayLocalDate());
+  const [meetingsSectionList, setMeetingsSectionList]     = useState([]);
+  const [meetingsSectionLoading, setMeetingsSectionLoading] = useState(false);
+  const [showMeetingsCalendar, setShowMeetingsCalendar]   = useState(false);
 
   // ── Mobile / Desktop view toggle ─────────────────────────────────────────
   // deviceIsMobile tracks the real viewport (updates on resize/rotation).
@@ -1809,6 +2054,41 @@ export default function MDDashboard({ onLogout }) {
 
     setTimelineLoading(false);
   }, []);
+
+  // ── Fetch executive meetings for the Executive Meetings section's own,
+  //    independent date (separate from the Schedule/Timeline section) ───────
+  const meetingsSectionFetchId = useRef(0);
+  const fetchMeetingsForDate = useCallback(async (dateStr) => {
+    const fetchId = ++meetingsSectionFetchId.current;
+    setMeetingsSectionLoading(true);
+
+    const { data, error } = await supabase
+      .from("executive_meetings")
+      .select("*")
+      .eq("meeting_date", dateStr);
+
+    if (fetchId !== meetingsSectionFetchId.current) return; // stale, discard
+
+    if (error) {
+      console.error("[MeetingsSection] fetch error:", error);
+    } else {
+      setMeetingsSectionList(sortByTime(data ?? [], "meeting_time"));
+    }
+    setMeetingsSectionLoading(false);
+  }, []);
+
+  // Fetch whenever the Executive Meetings section's date changes
+  useEffect(() => {
+    fetchMeetingsForDate(meetingsSectionDate);
+  }, [meetingsSectionDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When viewing today, keep this section in sync with the live realtime
+  // `meetings` state instead of a separate fetch (avoids duplicate network calls).
+  useEffect(() => {
+    if (meetingsSectionDate === today) {
+      setMeetingsSectionList(meetings);
+    }
+  }, [meetings, meetingsSectionDate, today]);
 
   // ── Effect: fetch timeline whenever the selected date changes ─────────────
   // NOTE: We deliberately do NOT scroll here — scrolling is handled separately below
@@ -2222,7 +2502,9 @@ export default function MDDashboard({ onLogout }) {
   // ── Date navigation helpers ───────────────────────────────────────────────
   // Recompute today fresh each call so it's never stale
   const isOnToday      = timelineDate === today;
-  const isNextDisabled = timelineDate >= today; // >= guards same-day and any future edge case
+  // Madam can browse ANY date — past, today, or future — so the Next button
+  // is never disabled. (Previously this hard-blocked anything beyond today.)
+  const isNextDisabled = false;
 
   function handlePrevDay() {
     const d = new Date(timelineDate + "T00:00:00");
@@ -2231,12 +2513,9 @@ export default function MDDashboard({ onLogout }) {
   }
 
   function handleNextDay() {
-    const currentToday = getTodayLocalDate(); // fresh, not from closure
-    if (timelineDate >= currentToday) return;  // hard block
     const d = new Date(timelineDate + "T00:00:00");
     d.setDate(d.getDate() + 1);
-    const next = d.toISOString().split("T")[0];
-    setTimelineDate(next >= currentToday ? currentToday : next);
+    setTimelineDate(d.toISOString().split("T")[0]);
   }
 
   // Reuse the values derived above (used by the timer + action handlers) so we
@@ -2268,6 +2547,22 @@ export default function MDDashboard({ onLogout }) {
   const tlApptCount    = timelineAppts.length;
   const tlMeetingCount = timelineMeetings.length;
   const tlHasEvents    = tlApptCount > 0 || tlMeetingCount > 0;
+
+  // ── Executive Meetings section — date-scoped list + nav helpers ───────────
+  const isMeetingsSectionToday  = meetingsSectionDate === today;
+  const meetingsSectionMeetings = sortByTime(meetingsSectionList, "meeting_time");
+
+  function handleMeetingsSectionPrevDay() {
+    const d = new Date(meetingsSectionDate + "T00:00:00");
+    d.setDate(d.getDate() - 1);
+    setMeetingsSectionDate(d.toISOString().split("T")[0]);
+  }
+
+  function handleMeetingsSectionNextDay() {
+    const d = new Date(meetingsSectionDate + "T00:00:00");
+    d.setDate(d.getDate() + 1);
+    setMeetingsSectionDate(d.toISOString().split("T")[0]);
+  }
 
   // ── Currently-Meeting card content blocks ─────────────────────────────────
   // The card can show a citizen in cabin, an ongoing VC, both (split), or the
@@ -2361,6 +2656,17 @@ export default function MDDashboard({ onLogout }) {
           <TourAddModal
             onClose={() => setShowTourAdd(false)}
             onSaved={() => { fetchAll(); }}
+          />
+        </ErrorBoundary>
+      )}
+
+      {statPanel && (
+        <ErrorBoundary fallback={null}>
+          <StatListPopup
+            type={statPanel}
+            appointments={appointments}
+            meetings={meetings}
+            onClose={() => setStatPanel(null)}
           />
         </ErrorBoundary>
       )}
@@ -2501,10 +2807,10 @@ export default function MDDashboard({ onLogout }) {
 
         {/* STAT CARDS */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18, marginBottom: 28 }}>
-          <StatCard title="Today's Citizens" value={totalCount}             icon="👥" gradient="linear-gradient(135deg,#3B82F6,#2563EB)" shadow="rgba(37,99,235,0.35)" />
-          <StatCard title="Waiting"          value={waitingCitizens.length} icon="⏳" gradient="linear-gradient(135deg,#F59E0B,#D97706)" shadow="rgba(217,119,6,0.35)" />
-          <StatCard title="Meetings"         value={meetings.length}        icon="📋" gradient="linear-gradient(135deg,#10B981,#059669)" shadow="rgba(5,150,105,0.35)" />
-          <StatCard title="Completed"        value={completedCount}         icon="✅" gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)" shadow="rgba(124,58,237,0.35)" />
+          <StatCard title="Today's Citizens" value={totalCount}             icon="👥" gradient="linear-gradient(135deg,#3B82F6,#2563EB)" shadow="rgba(37,99,235,0.35)" onClick={() => setStatPanel("citizens")} />
+          <StatCard title="Waiting"          value={waitingCitizens.length} icon="⏳" gradient="linear-gradient(135deg,#F59E0B,#D97706)" shadow="rgba(217,119,6,0.35)" onClick={() => setStatPanel("waiting")} />
+          <StatCard title="Meetings"         value={meetings.length}        icon="📋" gradient="linear-gradient(135deg,#10B981,#059669)" shadow="rgba(5,150,105,0.35)" onClick={() => setStatPanel("meetings")} />
+          <StatCard title="Completed"        value={completedCount}         icon="✅" gradient="linear-gradient(135deg,#8B5CF6,#7C3AED)" shadow="rgba(124,58,237,0.35)" onClick={() => setStatPanel("completed")} />
         </div>
 
         {/* CURRENT + NEXT CITIZEN */}
@@ -2578,21 +2884,77 @@ export default function MDDashboard({ onLogout }) {
 
         {/* EXECUTIVE MEETINGS */}
         <div style={{ background: "#fff", borderRadius: 22, padding: 28, boxShadow: "0 8px 32px rgba(0,0,0,0.06)", marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
             <div>
               <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Scheduled</p>
               <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: "#111827" }}>Executive Meetings</h2>
             </div>
-            <span style={{ background: "#EFF6FF", color: "#2563EB", fontSize: 12, fontWeight: 700, padding: "5px 14px", borderRadius: 99, border: "1px solid #BFDBFE" }}>{meetings.length} Today</span>
+
+            {/* Date navigator — browse today, past, or future meetings independently of the Timeline section below */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={handleMeetingsSectionPrevDay}
+                title="Previous day"
+                style={{ background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#374151", lineHeight: 1 }}
+              >◀</button>
+
+              <div
+                onClick={() => setShowMeetingsCalendar(s => !s)}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "#F8FAFC", border: `1.5px solid ${isMeetingsSectionToday ? "#BFDBFE" : "#DDD6FE"}`, borderRadius: 12, padding: "7px 13px", cursor: "pointer", position: "relative", minWidth: 120 }}
+              >
+                <span style={{ fontSize: 14 }}>📅</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#111827", whiteSpace: "nowrap" }}>
+                  {isMeetingsSectionToday
+                    ? "Today"
+                    : new Date(meetingsSectionDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                </span>
+                <span style={{ fontSize: 9, color: "#9CA3AF" }}>▾</span>
+                {showMeetingsCalendar && (
+                  <MiniCalendar
+                    value={meetingsSectionDate}
+                    onPick={(ds) => setMeetingsSectionDate(ds)}
+                    onClose={() => setShowMeetingsCalendar(false)}
+                  />
+                )}
+              </div>
+
+              <button
+                onClick={handleMeetingsSectionNextDay}
+                title="Next day"
+                style={{ background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#374151", lineHeight: 1 }}
+              >▶</button>
+
+              {!isMeetingsSectionToday && (
+                <button
+                  onClick={() => setMeetingsSectionDate(getTodayLocalDate())}
+                  style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 99, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}
+                >
+                  Today
+                </button>
+              )}
+
+              <span style={{ background: "#EFF6FF", color: "#2563EB", fontSize: 12, fontWeight: 700, padding: "5px 14px", borderRadius: 99, border: "1px solid #BFDBFE", whiteSpace: "nowrap" }}>
+                {meetingsSectionMeetings.length} {isMeetingsSectionToday ? "Today" : ""}
+              </span>
+            </div>
           </div>
-          {meetings.length === 0 ? (
+          {meetingsSectionLoading ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "#9CA3AF" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
+                <span style={{ width: 14, height: 14, border: "2px solid #E5E7EB", borderTopColor: "#2563EB", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                Loading meetings…
+              </span>
+            </div>
+          ) : meetingsSectionMeetings.length === 0 ? (
             <div style={{ textAlign: "center", padding: "32px 0", color: "#9CA3AF" }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>No executive meetings today</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+                No executive meetings {isMeetingsSectionToday ? "today" : `on ${new Date(meetingsSectionDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`}
+              </p>
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
-              {meetings.map((meeting, index) => {
+              {meetingsSectionMeetings.map((meeting, index) => {
                 const linkValid = isMeetLinkValid(meeting.meet_link);
                 const effStatus = getMeetingEffectiveStatus(meeting);
                 const isDone    = effStatus === "Completed" || effStatus === "Cancelled";
@@ -2697,18 +3059,17 @@ export default function MDDashboard({ onLogout }) {
                 {showCalendar && (
                   <MiniCalendar
                     value={timelineDate}
-                    maxDate={today}
                     onPick={(ds) => setTimelineDate(ds)}
                     onClose={() => setShowCalendar(false)}
                   />
                 )}
               </div>
 
-              {/* ▶ Next — disabled when on today */}
+              {/* ▶ Next day — browse into the future too */}
               <button
                 onClick={handleNextDay}
                 disabled={isNextDisabled}
-                title={isNextDisabled ? "Cannot navigate beyond today" : "Next day"}
+                title="Next day"
                 style={{
                   background: "#F1F5F9",
                   border: "1.5px solid #E2E8F0",
@@ -3282,15 +3643,25 @@ function MDLogoutButton({ onClick }) {
   );
 }
 
-function StatCard({ title, value, icon, gradient, shadow }) {
+function StatCard({ title, value, icon, gradient, shadow, onClick }) {
   return (
-    <div className="stat-card" style={{ background: gradient, color: "white", borderRadius: 22, padding: "28px 24px", boxShadow: `0 8px 24px ${shadow}`, position: "relative", overflow: "hidden" }}>
+    <div
+      className="stat-card"
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      style={{ background: gradient, color: "white", borderRadius: 22, padding: "28px 24px", boxShadow: `0 8px 24px ${shadow}`, position: "relative", overflow: "hidden", cursor: onClick ? "pointer" : "default" }}
+    >
       <div style={{ position: "absolute", top: -20, right: -20, width: 90, height: 90, borderRadius: "50%", background: "rgba(255,255,255,0.1)" }} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em" }}>{title}</p>
         <span style={{ fontSize: 22, background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "6px 8px", lineHeight: 1 }}>{icon}</span>
       </div>
       <h1 style={{ margin: 0, fontSize: 52, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.02em" }}>{value}</h1>
+      {onClick && (
+        <p style={{ margin: "10px 0 0", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.04em" }}>Tap to view →</p>
+      )}
     </div>
   );
 }
