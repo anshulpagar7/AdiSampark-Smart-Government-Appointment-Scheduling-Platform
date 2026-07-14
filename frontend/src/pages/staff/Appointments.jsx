@@ -842,9 +842,13 @@ export default function Appointments() {
                         {a.status === "Reschedule Required" && (
                           <span style={{ color: "#9333EA", fontSize: "16px" }} title="Reschedule Required">🔄</span>
                         )}
-                        {/* Always-available staff controls: fix details / remove */}
-                        <button onClick={() => setEditAppt(a)} style={styles.actionBtnEdit} title="Edit details">✏️ Edit</button>
-                        <button onClick={() => setDeleteAppt(a)} style={styles.actionBtnDelete} title="Delete appointment">🗑️</button>
+                        {/* Staff controls: fix details / remove — not for completed */}
+                        {a.status !== "Completed" && (
+                          <>
+                            <button onClick={() => setEditAppt(a)} style={styles.actionBtnEdit} title="Edit details">✏️ Edit</button>
+                            <button onClick={() => setDeleteAppt(a)} style={styles.actionBtnDelete} title="Delete appointment">🗑️</button>
+                          </>
+                        )}
                       </div>
                     </td>
 
