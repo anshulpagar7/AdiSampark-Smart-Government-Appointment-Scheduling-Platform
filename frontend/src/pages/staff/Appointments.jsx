@@ -88,6 +88,41 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+// in_cabin_at (ISO) → minutes since midnight for today, or null.
+function inCabinAtMinutes(inCabinAt) {
+  if (!inCabinAt) return null;
+  const d = new Date(inCabinAt);
+  if (isNaN(d.getTime())) return null;
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+// Effective end (minutes since midnight) for an "In Cabin" appointment, honouring
+// early admits: min(in_cabin_at + booked duration, original booked clock end).
+// Falls back to booked end / start+duration when in_cabin_at is absent, so old
+// rows behave exactly as before. Must match MDDashboard's identical helper so
+// both auto-engines agree. `fallbackDur` is the default duration (10 min here).
+function effectiveInCabinEndMin(appt, extraMin = 0, fallbackDur = 10) {
+  const startMin = parseTimeToMinutes(appt.appointment_time);
+  const durMin   = appt.appointment_duration ? Number(appt.appointment_duration) : null;
+
+  const storedEnd = parseTimeToMinutes(appt.appointment_end_time);
+  const byDuration = startMin !== null ? startMin + (durMin || fallbackDur) : null;
+  const bookedEnd = (storedEnd !== null && storedEnd >= 0)
+    ? storedEnd
+    : byDuration;
+
+  const admitMin = inCabinAtMinutes(appt.in_cabin_at);
+  const admitEnd = admitMin !== null ? admitMin + (durMin || fallbackDur) : null;
+
+  let end;
+  if (admitEnd !== null && bookedEnd !== null) end = Math.min(admitEnd, bookedEnd);
+  else if (admitEnd !== null)                  end = admitEnd;
+  else                                         end = bookedEnd;
+
+  if (end === null || end < 0) return null;
+  return end + (extraMin || 0);
+}
+
 // ─── CSV / Excel Export ───────────────────────────────────────────────────────
 
 function exportCSV(appointments) {
@@ -339,14 +374,10 @@ export default function Appointments() {
       for (const appt of appointments) {
         if (appt.status !== "In Cabin") continue;
 
-        const startMin  = parseTimeToMinutes(appt.appointment_time);
-        const storedEnd = parseTimeToMinutes(appt.appointment_end_time);
-        // Effective end = latest of stored end time and start + duration, so an
-        // MD "Extend 5 Minutes" (which bumps duration only) is honoured here too.
-        const byDuration =
-          startMin !== null ? startMin + (Number(appt.appointment_duration) || 10) : null;
-        let endMin = Math.max(storedEnd ?? -1, byDuration ?? -1);
-        if (endMin < 0) endMin = null;
+        // Effective end honours early admits: booked duration from in_cabin_at,
+        // capped at the original booked clock end. Falls back to stored end /
+        // start+duration when in_cabin_at is absent. Matches MDDashboard exactly.
+        const endMin = effectiveInCabinEndMin(appt);
 
         const key = `${appt.id}-${appt.status}`;
         if (endMin !== null && now >= endMin && !autoTransitionedRef.current.has(key)) {
@@ -379,9 +410,11 @@ export default function Appointments() {
       for (const { appt, newStatus, key } of toTransition) {
         autoTransitionedRef.current.add(key);
 
+        const updatePayload = { status: newStatus };
+        if (newStatus === "In Cabin") updatePayload.in_cabin_at = new Date().toISOString();
         const { error } = await supabase
           .from("appointments")
-          .update({ status: newStatus })
+          .update(updatePayload)
           .eq("id", appt.id);
 
         if (error) {
@@ -428,9 +461,11 @@ export default function Appointments() {
       return;
     }
 
+    const updatePayload = { status: newStatus };
+    if (newStatus === "In Cabin") updatePayload.in_cabin_at = new Date().toISOString();
     const { error } = await supabase
       .from("appointments")
-      .update({ status: newStatus })
+      .update(updatePayload)
       .eq("id", appointment.id);
 
     if (error) {
