@@ -13,6 +13,16 @@ function timeToMinutes(time) {
   return Number(hours) * 60 + Number(minutes);
 }
 
+// Normalise any stored time ("02:30 PM" or "14:30") to a 24h "HH:mm" string so
+// the 24-hour dropdowns load correctly when editing an existing meeting.
+function to24hStr(time) {
+  if (!time) return "";
+  const mins = timeToMinutes(time);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function todayStr() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -109,13 +119,21 @@ export default function ExecutiveMeetings() {
 
   const validate = () => {
     const e = {};
+    const fullTime = /^\d{2}:\d{2}$/; // HH:mm, both parts chosen
     if (!form.title.trim())          e.title          = "Meeting title is required";
     if (!form.meeting_with.trim())   e.meeting_with   = "Attendee is required";
     if (!form.meeting_date)          e.meeting_date   = "Date is required";
-    if (!form.meeting_time)          e.meeting_time   = "Start time is required";
-    if (!form.meeting_end_time)      e.meeting_end_time = "End time is required";
+    if (!form.meeting_time)               e.meeting_time     = "Start time is required";
+    else if (!fullTime.test(form.meeting_time)) e.meeting_time = "Select both hour and minute";
+    if (!form.meeting_end_time)               e.meeting_end_time = "End time is required";
+    else if (!fullTime.test(form.meeting_end_time)) e.meeting_end_time = "Select both hour and minute";
 
-    if (form.meeting_date === todayStr() && form.meeting_time) {
+    if (!e.meeting_time && !e.meeting_end_time &&
+        timeToMinutes(form.meeting_end_time) <= timeToMinutes(form.meeting_time)) {
+      e.meeting_end_time = "End time must be after start time";
+    }
+
+    if (form.meeting_date === todayStr() && form.meeting_time && !e.meeting_time) {
       const now = new Date();
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       if (timeToMinutes(form.meeting_time) < nowMinutes) {
@@ -317,8 +335,8 @@ export default function ExecutiveMeetings() {
       title:            m.title            || "",
       meeting_with:     m.meeting_with     || "",
       meeting_date:     m.meeting_date     || "",
-      meeting_time:     m.meeting_time     || "",
-      meeting_end_time: m.meeting_end_time || "",
+      meeting_time:     to24hStr(m.meeting_time),
+      meeting_end_time: to24hStr(m.meeting_end_time),
       meet_link:        m.meet_link        || "",
       notes:            m.notes            || "",
       status:           m.status           || "Upcoming",
@@ -607,13 +625,11 @@ export default function ExecutiveMeetings() {
                   style={{ ...styles.input, borderColor: errors.meeting_date ? "#FCA5A5" : "#E2E8F0" }} />
               </FormField>
               <div style={styles.formRow}>
-                <FormField label="Meeting Start Time" error={errors.meeting_time} required>
-                  <input type="time" name="meeting_time" value={form.meeting_time} onChange={handleChange}
-                    style={{ ...styles.input, borderColor: errors.meeting_time ? "#FCA5A5" : "#E2E8F0" }} />
+                <FormField label="Meeting Start Time (24h)" error={errors.meeting_time} required>
+                  <TimeSelect24 name="meeting_time" value={form.meeting_time} onChange={handleChange} error={errors.meeting_time} />
                 </FormField>
-                <FormField label="Meeting End Time" error={errors.meeting_end_time} required>
-                  <input type="time" name="meeting_end_time" value={form.meeting_end_time} onChange={handleChange}
-                    style={{ ...styles.input, borderColor: errors.meeting_end_time ? "#FCA5A5" : "#E2E8F0" }} />
+                <FormField label="Meeting End Time (24h)" error={errors.meeting_end_time} required>
+                  <TimeSelect24 name="meeting_end_time" value={form.meeting_end_time} onChange={handleChange} error={errors.meeting_end_time} />
                 </FormField>
               </div>
               <FormField label="Meeting Link">
@@ -705,6 +721,45 @@ function FormField({ label, error, required, children }) {
       </label>
       {children}
       {error && <p style={{ margin: "4px 0 0", color: "#DC2626", fontSize: "12px" }}>{error}</p>}
+    </div>
+  );
+}
+
+// 24-hour time picker (hour 00–23 + minute), independent of the OS locale so it
+// always shows 24h — unlike a native <input type="time"> which follows the OS.
+// value/onChange use the same "HH:mm" string the form already stores.
+function TimeSelect24({ name, value, onChange, error }) {
+  const [hh = "", mm = ""] = (value || "").split(":");
+  const pad = n => String(n).padStart(2, "0");
+  const hours   = Array.from({ length: 24 }, (_, i) => pad(i));
+  const minutes = Array.from({ length: 60 }, (_, i) => pad(i));
+
+  const emit = (nextHH, nextMM) => {
+    // Store "HH:mm" when both parts are chosen; keep a partial (e.g. "14:")
+    // otherwise so the other dropdown's selection isn't lost. Empty when neither.
+    let next = "";
+    if (nextHH !== "" || nextMM !== "") next = `${nextHH}:${nextMM}`;
+    onChange({ target: { name, value: next } });
+  };
+
+  const selStyle = {
+    ...styles.input,
+    borderColor: error ? "#FCA5A5" : "#E2E8F0",
+    flex: 1,
+    appearance: "auto",
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <select value={hh} onChange={e => emit(e.target.value, mm)} style={selStyle}>
+        <option value="">HH</option>
+        {hours.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span style={{ fontWeight: 700, color: "#6B7280" }}>:</span>
+      <select value={mm} onChange={e => emit(hh, e.target.value)} style={selStyle}>
+        <option value="">MM</option>
+        {minutes.map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
     </div>
   );
 }
