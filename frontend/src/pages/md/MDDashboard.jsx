@@ -2562,10 +2562,16 @@ export default function MDDashboard({ onLogout }) {
                       </div>
                     </div>
                     {isDone ? (
-                      // Meeting is over/cancelled — Join is disabled and greyed out.
-                      <button disabled style={{ display: "block", background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", textAlign: "center", opacity: 0.7, boxSizing: "border-box" }}>
-                        {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
-                      </button>
+                      // Meeting is over/cancelled — Join is disabled and greyed out,
+                      // but keep the Meet link reachable (ran late / couldn't join in time).
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button disabled style={{ display: "block", background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", textAlign: "center", opacity: 0.7, boxSizing: "border-box" }}>
+                          {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
+                        </button>
+                        {effStatus !== "Cancelled" && linkValid && (
+                          <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" style={{ display: "block", background: "#fff", color: "#059669", border: "1px solid #A7F3D0", padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Open Meet Link</a>
+                        )}
+                      </div>
                     ) : linkValid ? (
                       <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" className="join-btn" style={{ display: "block", background: "linear-gradient(135deg,#10B981,#059669)", color: "white", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", boxShadow: "0 4px 12px rgba(16,185,129,0.35)", width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Join Meeting</a>
                     ) : (
@@ -3063,8 +3069,15 @@ function MobileDashboard({
                   <p style={{ margin:"0 0 8px", fontSize:13, color:"#374151" }}>🏛️ {m.meeting_with}</p>
                   <span style={{ display:"inline-block", marginBottom:12, fontSize:12, fontWeight:700, color:mSc.color, background:mSc.bg, border:`1px solid ${mSc.border}`, padding:"2px 10px", borderRadius:99 }}>{effStatus}</span>
                   {isDone ? (
-                    <div style={{ background:"#E5E7EB", borderRadius:12, padding:"11px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:700 }}>
-                      {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
+                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                      <div style={{ background:"#E5E7EB", borderRadius:12, padding:"11px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:700 }}>
+                        {effStatus === "Cancelled" ? "🚫 Cancelled" : "✅ Meeting Completed"}
+                      </div>
+                      {effStatus !== "Cancelled" && linkValid && (
+                        <a href={m.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"#fff", color:"#059669", border:"1px solid #A7F3D0", textDecoration:"none", padding:"9px 0", borderRadius:10, textAlign:"center", fontSize:13, fontWeight:700 }}>
+                          🔗 Open Meet Link
+                        </a>
+                      )}
                     </div>
                   ) : linkValid ? (
                     <a href={m.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", textDecoration:"none", padding:"11px 0", borderRadius:12, textAlign:"center", fontSize:14, fontWeight:700, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" }}>
