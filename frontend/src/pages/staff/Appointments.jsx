@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
 import { syncCalendarUpdate, syncCalendarDelete } from "../../lib/calendarSync";
+import { SLOT_GROUPS, ALL_SLOTS, DURATION_OPTIONS, getOccupiedSlots } from "../../lib/staffSlots";
 
 // ─── Status Config ────────────────────────────────────────────────────────────
 
@@ -81,6 +82,24 @@ function appointmentOverlapsVc(appt, meetings) {
     if (apptStart < mEnd && apptEnd > mStart) return true;
   }
   return false;
+}
+
+// Convert minutes-since-midnight back to the "hh:mm AM/PM" string the app stores.
+function minutesToTimeStr(mins) {
+  const total = ((mins % 1440) + 1440) % 1440; // wrap safely
+  let h = Math.floor(total / 60);
+  const m = total % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+// Preview the end time for the modal's "New slot" line.
+function previewEnd(startStored, duration) {
+  const s = parseTimeToMinutes(startStored);
+  if (s === null || isNaN(s)) return "—";
+  return minutesToTimeStr(s + (Number(duration) || 5));
 }
 
 function todayStr() {
@@ -547,17 +566,77 @@ export default function Appointments() {
     fetchAppointments();
   };
 
-  // ── Save edits to an appointment (name / mobile / purpose / from) ──────────
-  // Keeps the calendar event in step. Does NOT change time/date/status here —
-  // this is for correcting details like a mistyped name.
+  // ── Save edits to an appointment ──────────────────────────────────────────
+  // Handles detail corrections (name/mobile/purpose/from) AND rescheduling
+  // (date / time / duration). When the slot changes we recompute the end time,
+  // check the new slot isn't already taken, and push the new time to Calendar.
   const handleSaveEdit = async (form) => {
     if (!form?.id) return;
+
+    const newDate = form.appointment_date;
+    const newTime = form.appointment_time;
+    const newDur  = Number(form.appointment_duration) || 5;
+
+    const startMin = parseTimeToMinutes(newTime);
+    if (startMin === null || isNaN(startMin)) {
+      alert("Invalid time. Please pick a valid appointment time.");
+      return;
+    }
+    const newEndTime = minutesToTimeStr(startMin + newDur);
+
+    // Did the schedule actually move?
+    const moved =
+      newDate !== form._origDate ||
+      newTime !== form._origTime ||
+      newDur  !== Number(form._origDuration);
+
+    // If moved, make sure the new window doesn't collide with another
+    // active appointment on that date (ignore this one, and ignore
+    // completed/cancelled rows).
+    if (moved) {
+      const { data: sameDay, error: fetchErr } = await supabase
+        .from("appointments")
+        .select("id, citizen_name, appointment_time, appointment_end_time, appointment_duration, status")
+        .eq("appointment_date", newDate);
+
+      if (fetchErr) {
+        console.error("[handleSaveEdit] clash check failed:", fetchErr);
+        alert("Could not verify the new slot. Please try again.");
+        return;
+      }
+
+      const newStart = startMin;
+      const newEnd   = startMin + newDur;
+      const clash = (sameDay || []).find(a => {
+        if (a.id === form.id) return false;
+        if (a.status === "Completed" || a.status === "Cancelled") return false;
+        const aS = parseTimeToMinutes(a.appointment_time);
+        if (aS === null || isNaN(aS)) return false;
+        const aE = a.appointment_end_time
+          ? parseTimeToMinutes(a.appointment_end_time)
+          : aS + (Number(a.appointment_duration) || 5);
+        return newStart < aE && newEnd > aS;
+      });
+
+      if (clash) {
+        const ok = window.confirm(
+          `This time overlaps with ${clash.citizen_name} (${clash.appointment_time}` +
+          `${clash.appointment_end_time ? ` – ${clash.appointment_end_time}` : ""}).\n\n` +
+          `Move this appointment here anyway?`
+        );
+        if (!ok) return;
+      }
+    }
 
     const patch = {
       citizen_name: (form.citizen_name || "").trim(),
       mobile:       (form.mobile || "").trim() || null,
       purpose:      (form.purpose || "").trim() || null,
       location:     (form.location || "").trim() || null,
+      appointment_date:     newDate,
+      appointment_time:     newTime,
+      appointment_duration: newDur,
+      appointment_end_time: newEndTime,
     };
 
     const { error } = await supabase
@@ -571,17 +650,17 @@ export default function Appointments() {
       return;
     }
 
-    // Sync corrected details to the calendar event if one exists.
+    // Sync corrected details / new time to the calendar event if one exists.
     if (form.google_event_id) {
       syncCalendarUpdate({
         google_event_id:      form.google_event_id,
         appointment_id:       form.appointment_id,
         citizen_name:         patch.citizen_name,
         purpose:              patch.purpose,
-        appointment_date:     form.appointment_date,
-        appointment_time:     form.appointment_time,
-        appointment_end_time: form.appointment_end_time,
-        appointment_duration: form.appointment_duration,
+        appointment_date:     patch.appointment_date,
+        appointment_time:     patch.appointment_time,
+        appointment_end_time: patch.appointment_end_time,
+        appointment_duration: patch.appointment_duration,
         officer_name:         form.officer_name,
         mobile:               patch.mobile,
         location:             patch.location,
@@ -899,6 +978,10 @@ function EditAppointmentModal({ appt, onClose, onSave }) {
     appointment_duration: appt.appointment_duration,
     officer_name:         appt.officer_name,
     google_event_id:      appt.google_event_id,
+    // Originals — used to detect whether the schedule actually moved.
+    _origDate:     appt.appointment_date,
+    _origTime:     appt.appointment_time,
+    _origDuration: appt.appointment_duration,
   });
   const [saving, setSaving] = useState(false);
 
@@ -907,6 +990,15 @@ function EditAppointmentModal({ appt, onClose, onSave }) {
   async function submit() {
     if (saving) return;
     if (!form.citizen_name.trim()) { alert("Name cannot be empty."); return; }
+    if (!form.appointment_date)    { alert("Please pick a date."); return; }
+    if (!form.appointment_time)    { alert("Please pick a start time slot."); return; }
+    // Only enforce the grid when an on-grid slot was chosen; legacy off-grid
+    // times are left as-is unless the user picks a new slot.
+    if (ALL_SLOTS.includes(form.appointment_time) &&
+        !getOccupiedSlots(form.appointment_time, Number(form.appointment_duration) || 5)) {
+      alert("This duration doesn't fit — it crosses the lunch break or runs past 8:00 PM.\nPick an earlier slot or a shorter duration.");
+      return;
+    }
     setSaving(true);
     await onSave(form);
     setSaving(false);
@@ -935,6 +1027,72 @@ function EditAppointmentModal({ appt, onClose, onSave }) {
 
           <label style={modal.label}>Arriving From</label>
           <input value={form.location} onChange={change("location")} style={modal.input} placeholder="City / village / area" />
+
+          {/* ── Reschedule ─────────────────────────────────────────────── */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed #E2E8F0" }}>
+            <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 800, color: "#7C3AED", letterSpacing: "0.04em", textTransform: "uppercase" }}>📅 Reschedule</p>
+            <p style={{ margin: "0 0 10px", fontSize: 11, color: "#9CA3AF" }}>
+              Shift this appointment to another date or time. The end time is recalculated automatically.
+            </p>
+
+            <label style={modal.label}>Date</label>
+            <input type="date" value={form.appointment_date || ""} onChange={change("appointment_date")} style={modal.input} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={modal.label}>Start Time</label>
+                <select
+                  value={ALL_SLOTS.includes(form.appointment_time) ? form.appointment_time : ""}
+                  onChange={(e) => setForm(f => ({ ...f, appointment_time: e.target.value }))}
+                  style={modal.input}
+                >
+                  {/* Current time may be off-grid (e.g. an older citizen booking) —
+                      surface it so it isn't silently changed on save. */}
+                  {!ALL_SLOTS.includes(form.appointment_time) && (
+                    <option value="">{form.appointment_time ? `${form.appointment_time} (current)` : "Select a slot"}</option>
+                  )}
+                  <optgroup label="☀️ Morning (10:00 AM – 1:20 PM)">
+                    {SLOT_GROUPS.filter(g => g.section === "morning").flatMap(g => g.slots).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🌤 Afternoon (2:30 PM – 8:00 PM)">
+                    {SLOT_GROUPS.filter(g => g.section === "afternoon").flatMap(g => g.slots).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+              <div>
+                <label style={modal.label}>Duration</label>
+                <select
+                  value={form.appointment_duration || 5}
+                  onChange={(e) => setForm(f => ({ ...f, appointment_duration: Number(e.target.value) }))}
+                  style={modal.input}
+                >
+                  {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+            </div>
+
+            {(() => {
+              const fits = form.appointment_time
+                ? getOccupiedSlots(form.appointment_time, Number(form.appointment_duration) || 5)
+                : null;
+              const offGrid = form.appointment_time && !ALL_SLOTS.includes(form.appointment_time);
+              const bad = form.appointment_time && !offGrid && !fits;
+              return (
+                <p style={{ margin: "10px 0 0", fontSize: 12, color: bad ? "#B91C1C" : "#374151", background: bad ? "#FEF2F2" : "#F8FAFC", border: `1px solid ${bad ? "#FECACA" : "#E2E8F0"}`, borderRadius: 8, padding: "8px 10px" }}>
+                  {bad ? (
+                    <>⚠️ This duration doesn’t fit — it crosses the lunch break or runs past 8:00 PM. Pick an earlier slot or a shorter duration.</>
+                  ) : (
+                    <>New slot: <strong>{form.appointment_time || "—"}</strong>
+                    {form.appointment_time && ` → ${previewEnd(form.appointment_time, form.appointment_duration)}`}</>
+                  )}
+                </p>
+              );
+            })()}
+          </div>
         </div>
         <div style={modal.footer}>
           <button onClick={onClose} style={modal.cancelBtn}>Cancel</button>
