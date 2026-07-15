@@ -154,24 +154,20 @@ function inCabinAtMinutes(inCabinAt) {
 //   • neither          → null (caller treats as "no timer")
 // `extraMin` folds in local ⏱ Extend minutes not yet reflected in the row.
 function effectiveInCabinEndMin(appt, extraMin = 0) {
-  const startMin = appt.appointment_time ? parseTimeToMinutes(appt.appointment_time) : null;
-  const durMin   = appt.appointment_duration ? Number(appt.appointment_duration) : null;
+  const durMin = appt.appointment_duration ? Number(appt.appointment_duration) : null;
 
-  // Booked clock end = stored end, else start + duration.
+  // APPROVAL-DRIVEN: the session runs for the booked duration measured from the
+  // moment staff approved the citizen — the booked slot time is not used.
+  const admitMin = inCabinAtMinutes(appt.in_cabin_at);
+  if (admitMin !== null && durMin) return admitMin + durMin + (extraMin || 0);
+
+  // Fallback for legacy rows with no in_cabin_at: stored end, else start+duration.
+  const startMin  = appt.appointment_time ? parseTimeToMinutes(appt.appointment_time) : null;
   const storedEnd = appt.appointment_end_time ? parseTimeToMinutes(appt.appointment_end_time) : null;
   const bookedEnd = storedEnd ?? (startMin !== null && durMin ? startMin + durMin : null);
 
-  const admitMin = inCabinAtMinutes(appt.in_cabin_at);
-  // Duration-based end measured from the actual admit time.
-  const admitEnd = admitMin !== null && durMin ? admitMin + durMin : null;
-
-  let end;
-  if (admitEnd !== null && bookedEnd !== null) end = Math.min(admitEnd, bookedEnd);
-  else if (admitEnd !== null)                  end = admitEnd;
-  else                                         end = bookedEnd;
-
-  if (end === null || end < 0) return null;
-  return end + (extraMin || 0);
+  if (bookedEnd === null || bookedEnd < 0) return null;
+  return bookedEnd + (extraMin || 0);
 }
 
 // Convert an <input type="time"> value ("14:30" or "09:05") into the "hh:mm AM/PM"
@@ -233,35 +229,30 @@ function buildDateTime(dateStr, timeStr) {
   return dt;
 }
 
-// Compute the end Date for an appointment, honouring EARLY admits.
-// Rule (matches effectiveInCabinEndMin): the end is the booked DURATION measured
-// from when the citizen actually entered the cabin (in_cabin_at), capped at the
-// original booked clock end — whichever comes FIRST. Falls back to the plain
-// start+duration when in_cabin_at is absent (old rows / admitted exactly on time).
+// Compute the end Date for an appointment — APPROVAL-DRIVEN.
+// The citizen's session runs for their booked DURATION measured from the moment
+// staff approved them (in_cabin_at), regardless of what their booked slot time
+// said. Approved early → full duration from now. Approved late → still the full
+// duration, not a window that already expired.
+// Falls back to booked start + duration only when in_cabin_at is missing
+// (legacy rows created before the column existed).
 // extraMinutes lets the UI apply a local "extend" before Supabase round-trips.
 function getAppointmentEndDate(appt, extraMinutes = 0) {
   if (!appt) return null;
-  const start = buildDateTime(appt.appointment_date, appt.appointment_time);
-  if (!start) return null;
 
-  const durMin  = Number(appt.appointment_duration) || 0;
-  const addMs   = (durMin + extraMinutes) * 60000;
+  const durMin = Number(appt.appointment_duration) || 0;
+  const addMs  = (durMin + extraMinutes) * 60000;
 
-  // Original booked clock end = booked start + duration.
-  const bookedEnd = new Date(start.getTime() + addMs);
-
-  // Duration-based end from the actual admit moment.
-  let admitEnd = null;
+  // Preferred: measured from the actual approval moment.
   if (appt.in_cabin_at) {
     const admit = new Date(appt.in_cabin_at);
-    if (!isNaN(admit.getTime())) {
-      admitEnd = new Date(admit.getTime() + addMs);
-    }
+    if (!isNaN(admit.getTime())) return new Date(admit.getTime() + addMs);
   }
 
-  // Whichever ends first.
-  if (admitEnd) return new Date(Math.min(admitEnd.getTime(), bookedEnd.getTime()));
-  return bookedEnd;
+  // Fallback for rows with no in_cabin_at (pre-existing data).
+  const start = buildDateTime(appt.appointment_date, appt.appointment_time);
+  if (!start) return null;
+  return new Date(start.getTime() + addMs);
 }
 
 // Format a positive seconds value as HH:MM:SS (e.g. 765 -> "00:12:45").
@@ -328,14 +319,16 @@ function Popup({ data, onComplete, onClose }) {
   const isBreak    = data.type === "break";
   const isMeeting  = data.type === "meeting";
   const isConflict = data.type === "conflict";
+  const isInCabin  = data.type === "incabin";
   // Conflict popups wrap the meeting under `.meeting` (plus a `.conflicts`
   // list); plain meeting/break popups spread the fields directly onto `data`.
   const meetingData = isConflict ? data.meeting : data;
 
-  const accentColor = isBreak ? "#F59E0B" : (isMeeting || isConflict) ? "#7C3AED" : "#2563EB";
+  const accentColor = isBreak ? "#F59E0B" : (isMeeting || isConflict) ? "#7C3AED" : isInCabin ? "#059669" : "#2563EB";
   const typeLabel   = isBreak ? "☕ Break Time"
     : isConflict ? "⚠️ Meeting Conflict Detected"
     : isMeeting ? "📅 Executive Meeting Starting Soon"
+    : isInCabin ? "🚪 Now In Cabin"
     : "⏰ Appointment Time Completed";
   const typeTitle   = isBreak ? "Time for a short break!"
     : (isMeeting || isConflict) ? (meetingData?.title || "Executive Meeting")
@@ -427,7 +420,15 @@ function Popup({ data, onComplete, onClose }) {
             </div>
           )}
 
-          {!isBreak && !isMeeting && !isConflict && (
+          {isInCabin && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <InfoRow icon="📋" label="Purpose"        value={data.purpose} />
+              <InfoRow icon="⏱" label="Duration"       value={data.appointment_duration ? `${data.appointment_duration} min` : "—"} />
+              <InfoRow icon="🎫" label="Appointment ID" value={data.appointment_id} />
+            </div>
+          )}
+
+          {!isBreak && !isMeeting && !isConflict && !isInCabin && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <InfoRow icon="📋" label="Purpose"        value={data.purpose} />
               <InfoRow icon="🕐" label="Scheduled Time" value={`${data.appointment_time}${data.appointment_end_time ? ` – ${data.appointment_end_time}` : ""}`} />
@@ -436,12 +437,12 @@ function Popup({ data, onComplete, onClose }) {
           )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            {!isBreak && !isMeeting && !isConflict && (
+            {!isBreak && !isMeeting && !isConflict && !isInCabin && (
               <button onClick={onComplete} style={popupStyles.completeBtn}>
                 ✅ Meeting Completed
               </button>
             )}
-            <button onClick={onClose} style={{ ...popupStyles.closeBtn, flex: (isBreak || isMeeting || isConflict) ? 1 : undefined }}>
+            <button onClick={onClose} style={{ ...popupStyles.closeBtn, flex: (isBreak || isMeeting || isConflict || isInCabin) ? 1 : undefined }}>
               ❌ {(isMeeting || isConflict) ? "Dismiss" : "Close"}
             </button>
           </div>
@@ -2249,6 +2250,36 @@ export default function MDDashboard({ onLogout }) {
     });
   }, []);
 
+  // ── "Now in cabin" arrival notice ─────────────────────────────────────────
+  // Statuses are manual now, so the moment staff approve someone the MD should
+  // see who just walked in. Fires once per citizen, keyed on the appointment id,
+  // and only for a genuinely new occupant (not on refetches of the same person).
+  const announcedInCabinRef = useRef(
+    (() => {
+      try { return new Set(JSON.parse(sessionStorage.getItem("md_announced_incabin") || "[]")); }
+      catch { return new Set(); }
+    })()
+  );
+  useEffect(() => {
+    const c = currentInCabin;
+    if (!c) return;
+    const key = `incabin-${c.id ?? c.appointment_id}`;
+    if (announcedInCabinRef.current.has(key)) return;
+    announcedInCabinRef.current.add(key);
+    try {
+      sessionStorage.setItem("md_announced_incabin", JSON.stringify([...announcedInCabinRef.current]));
+    } catch { /* sessionStorage unavailable — popup still shows this session */ }
+
+    setPopup({
+      type: "incabin",
+      citizen_name: c.citizen_name,
+      purpose: c.purpose,
+      appointment_id: c.appointment_id,
+      appointment_duration: c.appointment_duration,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentInCabin?.id]);
+
   const closeTimeOverPopup = useCallback((markHandled) => {
     setTimeOverPopup(prev => {
       if (prev && markHandled) {
@@ -2363,104 +2394,13 @@ export default function MDDashboard({ onLogout }) {
     fetchAll();
   };
 
-  // ── Auto-status engine (runs on the dashboard itself) ─────────────────────
-  // Mirrors the Appointments-page engine so statuses advance even when only
-  // the MD Dashboard is open:
-  //   • auto-END: "In Cabin" → "Completed" once the time is over, with a
-  //     2-minute grace window so the Time-Over popup / ⏱ Extend stays usable.
-  //   • auto-APPROVE: earliest due "Waiting" citizen → "In Cabin", one at a
-  //     time, only when the cabin is free (same rule as the manual buttons).
-  const autoEngineRef = useRef(new Set());
+  // ── Citizen auto-status engine: REMOVED ───────────────────────────────────
+  // Citizen statuses are fully MANUAL now (staff Approve → Complete / No Show).
+  // Nothing advances a citizen on a timer. The meeting auto-complete below is
+  // unrelated and still runs.
+  //
+  // AUTO_END_GRACE_MIN is retained because the meeting auto-complete uses it.
   const AUTO_END_GRACE_MIN = 2;
-
-  useEffect(() => {
-    async function runAutoEngine() {
-      const todayLocal = getTodayLocalDate();
-      const now = nowMinutes();
-      const todays = appointments.filter(a => a.appointment_date === todayLocal);
-      if (todays.length === 0) return;
-
-      const toTransition = [];
-
-      // Pass 1 — auto-END. Effective end honours early admits: it's the booked
-      // DURATION measured from in_cabin_at, capped at the original booked clock
-      // end (see effectiveInCabinEndMin). Local ⏱ Extend minutes are folded in.
-      let cabinOccupied = false;
-      for (const a of todays) {
-        if (a.status !== "In Cabin") continue;
-
-        const extraMin = extensions[a.id ?? a.appointment_id] || 0;
-        const endMin = effectiveInCabinEndMin(a, extraMin);
-        if (endMin === null) { cabinOccupied = true; continue; }
-
-        const key = `${a.id}-auto-Completed`;
-        if (now >= endMin + AUTO_END_GRACE_MIN && !autoEngineRef.current.has(key)) {
-          toTransition.push({ appt: a, newStatus: "Completed", key });
-        } else {
-          cabinOccupied = true; // still in the cabin after this tick
-        }
-      }
-
-      // Pass 2 — auto-APPROVE next due citizen when the cabin is free.
-      if (!cabinOccupied) {
-        const due = todays
-          .filter(a => a.status === "Waiting")
-          .map(a => ({ a, start: parseTimeToMinutes(a.appointment_time) }))
-          .filter(x => x.start > 0 && now >= x.start)
-          .sort((x, y) => x.start - y.start);
-
-        if (due.length > 0) {
-          const next = due[0].a;
-          const key = `${next.id}-auto-InCabin`;
-          if (!autoEngineRef.current.has(key)) {
-            toTransition.push({ appt: next, newStatus: "In Cabin", key });
-          }
-        }
-      }
-
-      if (toTransition.length === 0) return;
-
-      for (const { appt, newStatus, key } of toTransition) {
-        autoEngineRef.current.add(key);
-        const updatePayload = { status: newStatus };
-        if (newStatus === "In Cabin") updatePayload.in_cabin_at = new Date().toISOString();
-        const { error } = await supabase
-          .from("appointments")
-          .update(updatePayload)
-          .eq("id", appt.id);
-
-        if (error) {
-          console.error("[MDDashboard AutoEngine] update failed:", error);
-          autoEngineRef.current.delete(key); // retry on a later tick
-          continue;
-        }
-
-        // Keep Google Calendar in step (same payload as the staff page)
-        if (appt.google_event_id) {
-          syncCalendarUpdate({
-            google_event_id:      appt.google_event_id,
-            appointment_id:       appt.appointment_id,
-            citizen_name:         appt.citizen_name,
-            purpose:              appt.purpose,
-            appointment_date:     appt.appointment_date,
-            appointment_time:     appt.appointment_time,
-            appointment_end_time: appt.appointment_end_time,
-            appointment_duration: appt.appointment_duration,
-            officer_name:         appt.officer_name,
-            mobile:               appt.mobile,
-            location:             appt.location,
-          }).catch(e => console.error("[MDDashboard AutoEngine] calendar sync:", e));
-        }
-      }
-
-      fetchAll();
-    }
-
-    runAutoEngine();
-    const t = setInterval(runAutoEngine, 30000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointments, extensions]);
 
   // ── Auto-complete engine for EXECUTIVE MEETINGS ───────────────────────────
   // Appointments have an auto-END engine; meetings previously did not, so a past
