@@ -338,14 +338,80 @@ export default function Appointments() {
     setExecutiveMeetings(data ?? []);
   }, [selectedDate]);
 
-  // ── Auto-status engine: REMOVED ───────────────────────────────────────────
-  // Status changes are fully MANUAL now. Staff click Approve (→ In Cabin), then
-  // Complete or No Show. Nothing advances on a timer any more.
+  // ── Auto-COMPLETE engine (approval-driven) ────────────────────────────────
+  // Approving stays MANUAL (staff click Approve / No Show). Once a citizen is
+  // "In Cabin", their session runs for their booked duration measured from the
+  // APPROVAL moment (in_cabin_at) — not their booked slot time. The instant that
+  // runs out they are auto-completed.
   //
-  // NOTE: `in_cabin_at` is still stamped when a citizen is approved (see
-  // updateStatus below). The MD dashboard uses it to show the live timer and to
-  // raise its time-over prompt, measured from the APPROVAL moment rather than
-  // the booked slot time.
+  // Timestamp maths (not minutes-since-midnight) so a session that crosses
+  // midnight can't wrap and complete early.
+  // A ref guards against firing the same completion twice across ticks.
+  const autoCompletedRef = useRef(new Set());
+
+  useEffect(() => {
+    async function runAutoComplete() {
+      const now = Date.now();
+      const due = [];
+
+      for (const appt of appointments) {
+        if (appt.status !== "In Cabin") continue;
+        if (!appt.in_cabin_at) continue; // no approval stamp → nothing to measure
+
+        const admit = new Date(appt.in_cabin_at).getTime();
+        if (isNaN(admit)) continue;
+
+        const durMs = (Number(appt.appointment_duration) || 5) * 60000;
+        const endMs = admit + durMs;
+
+        const key = String(appt.id);
+        if (now >= endMs && !autoCompletedRef.current.has(key)) {
+          due.push({ appt, key });
+        }
+      }
+
+      if (due.length === 0) return;
+
+      for (const { appt, key } of due) {
+        autoCompletedRef.current.add(key);
+        const { error } = await supabase
+          .from("appointments")
+          .update({ status: "Completed" })
+          .eq("id", appt.id);
+
+        if (error) {
+          console.error("[AutoComplete] failed:", error);
+          autoCompletedRef.current.delete(key); // retry next tick
+          continue;
+        }
+
+        // Keep the calendar event in step, same as a manual Complete.
+        if (appt.google_event_id) {
+          syncCalendarUpdate({
+            google_event_id:      appt.google_event_id,
+            appointment_id:       appt.appointment_id,
+            citizen_name:         appt.citizen_name,
+            purpose:              appt.purpose,
+            appointment_date:     appt.appointment_date,
+            appointment_time:     appt.appointment_time,
+            appointment_end_time: appt.appointment_end_time,
+            appointment_duration: appt.appointment_duration,
+            officer_name:         appt.officer_name,
+            mobile:               appt.mobile,
+            location:             appt.location,
+          }).catch(e => console.error("[AutoComplete] calendar sync:", e));
+        }
+      }
+
+      fetchAppointments();
+    }
+
+    runAutoComplete();
+    // 10s tick so completion lands close to the actual zero mark.
+    const interval = setInterval(runAutoComplete, 10_000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments, fetchAppointments]);
 
   // ── Manual status update (staff override) ────────────────────────────────
   const updateStatus = async (appointment, newStatus) => {
