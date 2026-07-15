@@ -3372,6 +3372,22 @@ function MobileDashboard({
     return today >= t.start_date && today <= end && t.status !== "Cancelled";
   }) || null;
 
+  // A VC counts as "ongoing" when now is within [start, end] and it isn't
+  // cancelled/completed. Mirrors the same computation used in the desktop
+  // view's Currently Meeting card (kept local here since MobileDashboard is
+  // a separate top-level component and doesn't share that closure).
+  const ongoingVc = (() => {
+    const now = nowMinutes();
+    return meetings.find(m => {
+      if (!m.meeting_time) return false;
+      if (m.status === "Cancelled" || m.status === "Completed") return false;
+      if (m.meeting_date && m.meeting_date !== today) return false;
+      const start = parseTimeToMinutes(m.meeting_time);
+      const end   = m.meeting_end_time ? parseTimeToMinutes(m.meeting_end_time) : start + 30;
+      return now >= start && now <= end;
+    }) || null;
+  })();
+
   const tabs = [
     { key: "home",     icon: "🏠", label: "Home"     },
     { key: "citizens", icon: "👥", label: "Queue"    },
