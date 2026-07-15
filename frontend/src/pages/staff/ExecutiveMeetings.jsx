@@ -46,6 +46,29 @@ function formatSelectedDate(dateStr) {
   return d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
+// Returns the OTHER meetings (same date) that overlap this one in time.
+// Cancelled meetings are never a conflict, and a meeting never conflicts with
+// itself. Powers the persistent purple "Conflicts with" badge on each card —
+// independent of the one-time check done when a meeting is first scheduled.
+function findOverlappingMeetings(meeting, allMeetings) {
+  if (!meeting?.meeting_time) return [];
+  const start = timeToMinutes(meeting.meeting_time);
+  const end   = meeting.meeting_end_time ? timeToMinutes(meeting.meeting_end_time) : start + 30;
+
+  return (allMeetings || []).filter(other => {
+    if (!other || !other.meeting_time) return false;
+    if (meeting.id != null && other.id != null && other.id === meeting.id) return false;
+    if (other === meeting) return false;
+    if (other.status === "Cancelled") return false;
+    if (meeting.meeting_date && other.meeting_date && meeting.meeting_date !== other.meeting_date) return false;
+
+    const oStart = timeToMinutes(other.meeting_time);
+    const oEnd   = other.meeting_end_time ? timeToMinutes(other.meeting_end_time) : oStart + 30;
+
+    return oStart < end && oEnd > start;
+  });
+}
+
 function getEffectiveStatus(m) {
   if (m.status === "Cancelled") return "Cancelled";
   if (!m.meeting_date) return m.status || "Upcoming";
@@ -557,6 +580,11 @@ export default function ExecutiveMeetings() {
           const day   = dateObj ? dateObj.getDate() : "—";
           const month = dateObj ? dateObj.toLocaleString("default", { month: "short" }) : "";
           const year  = dateObj ? dateObj.getFullYear() : "";
+          // Persistent overlap check against every other meeting on this date —
+          // shown regardless of how/when the meeting was originally scheduled.
+          const overlaps = (effectiveStatus === "Completed" || effectiveStatus === "Cancelled")
+            ? []
+            : findOverlappingMeetings(m, dateFiltered);
 
           return (
             <div key={m.id} style={{ ...styles.meetingCard, borderLeft: `4px solid ${effectiveStatus === "Completed" ? "#10B981" : "#2563EB"}` }}>
@@ -568,6 +596,11 @@ export default function ExecutiveMeetings() {
                   </div>
                   <h2 style={styles.meetingTitle}>{m.title}</h2>
                   <p style={styles.meetingWith}>Meeting with: <strong>{m.meeting_with}</strong></p>
+                  {overlaps.length > 0 && (
+                    <p style={{ margin: "4px 0 0", fontSize: "11px", fontWeight: 700, color: "#7C3AED" }}>
+                      ⚠ Conflicts with {overlaps.map(o => o.title).join(", ")}
+                    </p>
+                  )}
                 </div>
                 <div style={styles.dateBlock}>
                   <div style={styles.dateBox}>
@@ -589,6 +622,7 @@ export default function ExecutiveMeetings() {
                   <a href={m.meet_link} target="_blank" rel="noreferrer" style={styles.linkText}>{m.meet_link}</a>
                 </div>
               )}
+
 
               <div style={styles.cardActions}>
                 {effectiveStatus === "Completed" ? (

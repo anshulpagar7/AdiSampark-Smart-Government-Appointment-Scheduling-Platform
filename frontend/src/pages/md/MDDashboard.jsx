@@ -87,6 +87,30 @@ function sortByTime(arr, key) {
   );
 }
 
+// Returns the OTHER meetings (on the same date) that overlap this one in time.
+// Cancelled meetings never count as a conflict (their slot is free), and a
+// meeting never conflicts with itself. Used to show a persistent "Conflict"
+// indicator on meeting cards, and to trigger the conflict alert popup —
+// independent of the one-time check done when a meeting is first scheduled.
+function findOverlappingMeetings(meeting, allMeetings) {
+  if (!meeting?.meeting_time) return [];
+  const start = parseTimeToMinutes(meeting.meeting_time);
+  const end   = meeting.meeting_end_time ? parseTimeToMinutes(meeting.meeting_end_time) : start + 30;
+
+  return (allMeetings || []).filter(other => {
+    if (!other || !other.meeting_time) return false;
+    if (meeting.id != null && other.id != null && other.id === meeting.id) return false;
+    if (other === meeting) return false;
+    if (other.status === "Cancelled") return false;
+    if (meeting.meeting_date && other.meeting_date && meeting.meeting_date !== other.meeting_date) return false;
+
+    const oStart = parseTimeToMinutes(other.meeting_time);
+    const oEnd   = other.meeting_end_time ? parseTimeToMinutes(other.meeting_end_time) : oStart + 30;
+
+    return oStart < end && oEnd > start;
+  });
+}
+
 function parseTimeToMinutes(timeStr) {
   if (!timeStr) return 0;
   const s = String(timeStr).trim();
@@ -301,15 +325,20 @@ function Popup({ data, onComplete, onClose }) {
     return () => clearInterval(t);
   }, [onClose]);
 
-  const isBreak   = data.type === "break";
-  const isMeeting = data.type === "meeting";
+  const isBreak    = data.type === "break";
+  const isMeeting  = data.type === "meeting";
+  const isConflict = data.type === "conflict";
+  // Conflict popups wrap the meeting under `.meeting` (plus a `.conflicts`
+  // list); plain meeting/break popups spread the fields directly onto `data`.
+  const meetingData = isConflict ? data.meeting : data;
 
-  const accentColor = isBreak ? "#F59E0B" : isMeeting ? "#7C3AED" : "#2563EB";
+  const accentColor = isBreak ? "#F59E0B" : (isMeeting || isConflict) ? "#7C3AED" : "#2563EB";
   const typeLabel   = isBreak ? "☕ Break Time"
+    : isConflict ? "⚠️ Meeting Conflict Detected"
     : isMeeting ? "📅 Executive Meeting Starting Soon"
     : "⏰ Appointment Time Completed";
   const typeTitle   = isBreak ? "Time for a short break!"
-    : isMeeting ? (data.title || "Executive Meeting")
+    : (isMeeting || isConflict) ? (meetingData?.title || "Executive Meeting")
     : (data.citizen_name || "");
 
   return (
@@ -331,19 +360,38 @@ function Popup({ data, onComplete, onClose }) {
             </span>
           </div>
 
-          {isMeeting && (
+          {(isMeeting || isConflict) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
               <div style={{ background: "linear-gradient(135deg,#F5F3FF,#EDE9FE)", border: "1px solid #DDD6FE", borderRadius: 12, padding: "16px 18px", marginBottom: 4 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <InfoRow icon="🏛️" label="Meeting With"  value={data.meeting_with || "—"} />
-                  <InfoRow icon="🕐" label="Scheduled At"  value={data.meeting_time || "—"} />
-                  {data.meeting_end_time && <InfoRow icon="⏱" label="Ends At" value={data.meeting_end_time} />}
-                  {data.notes && <InfoRow icon="📝" label="Notes" value={data.notes} />}
+                  <InfoRow icon="🏛️" label="Meeting With"  value={meetingData.meeting_with || "—"} />
+                  <InfoRow icon="🕐" label="Scheduled At"  value={meetingData.meeting_time || "—"} />
+                  {meetingData.meeting_end_time && <InfoRow icon="⏱" label="Ends At" value={meetingData.meeting_end_time} />}
+                  {meetingData.notes && <InfoRow icon="📝" label="Notes" value={meetingData.notes} />}
                 </div>
               </div>
-              {isMeetLinkValid(data.meet_link) ? (
+
+              {isConflict && (
+                <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "14px 18px" }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    ⚠ Overlaps With
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(data.conflicts || []).map((c, i) => (
+                      <div key={c.id ?? i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
+                        <span style={{ fontWeight: 700, color: "#111827" }}>{c.title}</span>
+                        <span style={{ fontWeight: 700, color: "#7C3AED", flexShrink: 0 }}>
+                          {c.meeting_time}{c.meeting_end_time ? ` – ${c.meeting_end_time}` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isMeetLinkValid(meetingData.meet_link) ? (
                 <a
-                  href={data.meet_link}
+                  href={meetingData.meet_link}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
@@ -379,7 +427,7 @@ function Popup({ data, onComplete, onClose }) {
             </div>
           )}
 
-          {!isBreak && !isMeeting && (
+          {!isBreak && !isMeeting && !isConflict && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <InfoRow icon="📋" label="Purpose"        value={data.purpose} />
               <InfoRow icon="🕐" label="Scheduled Time" value={`${data.appointment_time}${data.appointment_end_time ? ` – ${data.appointment_end_time}` : ""}`} />
@@ -388,13 +436,13 @@ function Popup({ data, onComplete, onClose }) {
           )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            {!isBreak && !isMeeting && (
+            {!isBreak && !isMeeting && !isConflict && (
               <button onClick={onComplete} style={popupStyles.completeBtn}>
                 ✅ Meeting Completed
               </button>
             )}
-            <button onClick={onClose} style={{ ...popupStyles.closeBtn, flex: isBreak || isMeeting ? 1 : undefined }}>
-              ❌ {isMeeting ? "Dismiss" : "Close"}
+            <button onClick={onClose} style={{ ...popupStyles.closeBtn, flex: (isBreak || isMeeting || isConflict) ? 1 : undefined }}>
+              ❌ {(isMeeting || isConflict) ? "Dismiss" : "Close"}
             </button>
           </div>
         </div>
@@ -2149,7 +2197,15 @@ export default function MDDashboard({ onLogout }) {
         const key = `meeting-${m.id}`;
         if (now >= startMin - 5 && now < startMin + 2 && !shownPopupsRef.current.has(key)) {
           shownPopupsRef.current.add(key);
-          setPopup({ type: "meeting", ...m });
+          // True time-range overlap (e.g. 10:30–11:00 vs 10:45–11:10), not just
+          // an identical start time — same rule used for the persistent purple
+          // "Conflicts with" badge on the meeting cards.
+          const overlaps = findOverlappingMeetings(m, meetings);
+          if (overlaps.length > 0) {
+            setPopup({ type: "conflict", meeting: m, conflicts: overlaps });
+          } else {
+            setPopup({ type: "meeting", ...m });
+          }
           return;
         }
       }
@@ -2965,6 +3021,9 @@ export default function MDDashboard({ onLogout }) {
                   Cancelled: { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA" },
                 };
                 const sc = statusColors[effStatus] || statusColors.Upcoming;
+                // Persistent overlap check — shown regardless of how the meeting
+                // was created, not just at the moment of scheduling.
+                const overlaps = isDone ? [] : findOverlappingMeetings(meeting, meetingsSectionMeetings);
                 return (
                   <div key={meeting.id ?? index} className="meeting-card" style={{ background: "linear-gradient(135deg,#F8FAFF,#F0F4FF)", padding: "22px 24px", borderRadius: 18, border: "1px solid #DBEAFE", boxShadow: "0 4px 16px rgba(37,99,235,0.07)", opacity: isDone ? 0.85 : 1 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
@@ -2981,9 +3040,17 @@ export default function MDDashboard({ onLogout }) {
                         <span style={{ fontSize: 14 }}>📌</span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: sc.color, background: sc.bg, border: `1px solid ${sc.border}`, padding: "2px 10px", borderRadius: 99 }}>{effStatus}</span>
                       </div>
+                      {overlaps.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#7C3AED" }}>
+                            ⚠ Conflicts with {overlaps.map(o => o.title).join(", ")}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     {isDone ? (
                       // Meeting is over/cancelled — Join is disabled and greyed out,
+
                       // but keep the Meet link reachable (ran late / couldn't join in time).
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         <button disabled style={{ display: "block", background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", textAlign: "center", opacity: 0.7, boxSizing: "border-box" }}>
@@ -3511,6 +3578,7 @@ function MobileDashboard({
                 Completed: { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0" },
                 Cancelled: { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA" },
               }[effStatus] || { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" };
+              const mOverlaps = isDone ? [] : findOverlappingMeetings(m, meetings);
               return (
                 <div key={m.id ?? i} style={{ background:"#fff", borderRadius:16, padding:"18px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", border:"1px solid #DBEAFE", opacity: isDone ? 0.85 : 1 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
@@ -3521,7 +3589,12 @@ function MobileDashboard({
                     <span style={{ background:"#EFF6FF", color:"#2563EB", fontSize:13, fontWeight:700, padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE", flexShrink:0, marginLeft:10 }}>{m.meeting_time}</span>
                   </div>
                   <p style={{ margin:"0 0 8px", fontSize:13, color:"#374151" }}>🏛️ {m.meeting_with}</p>
-                  <span style={{ display:"inline-block", marginBottom:12, fontSize:12, fontWeight:700, color:mSc.color, background:mSc.bg, border:`1px solid ${mSc.border}`, padding:"2px 10px", borderRadius:99 }}>{effStatus}</span>
+                  <span style={{ display:"inline-block", marginBottom:6, fontSize:12, fontWeight:700, color:mSc.color, background:mSc.bg, border:`1px solid ${mSc.border}`, padding:"2px 10px", borderRadius:99 }}>{effStatus}</span>
+                  {mOverlaps.length > 0 && (
+                    <p style={{ margin:"0 0 12px", fontSize:11, fontWeight:700, color:"#7C3AED" }}>
+                      ⚠ Conflicts with {mOverlaps.map(o => o.title).join(", ")}
+                    </p>
+                  )}
                   {isDone ? (
                     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                       <div style={{ background:"#E5E7EB", borderRadius:12, padding:"11px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:700 }}>
