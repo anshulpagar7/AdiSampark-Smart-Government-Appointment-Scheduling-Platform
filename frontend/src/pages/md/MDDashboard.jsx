@@ -2830,18 +2830,24 @@ export default function MDDashboard({ onLogout }) {
 
         {/* ── MOBILE VIEW ───────────────────────────────────────────────────── */}
         {isMobileView ? (
-          <MobileDashboard
-            greeting={greeting}
-            appointments={appointments}
-            meetings={meetings}
-            tourDiary={tourDiary}
-            currentCitizen={currentCitizen}
-            waitingCitizens={waitingCitizens}
-            nextCitizen={nextCitizen}
-            completedCount={completedCount}
-            totalCount={totalCount}
-            progressPct={progressPct}
-          />
+          <ErrorBoundary fallback={
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 14, padding: "20px", color: "#991B1B", fontSize: 13, fontWeight: 600, textAlign: "center" }}>
+              ⚠️ The mobile view hit an error and couldn't load. Please try "🖥️ Desktop" and back, or reload the page.
+            </div>
+          }>
+            <MobileDashboard
+              greeting={greeting}
+              appointments={appointments}
+              meetings={meetings}
+              tourDiary={tourDiary}
+              currentCitizen={currentCitizen}
+              waitingCitizens={waitingCitizens}
+              nextCitizen={nextCitizen}
+              completedCount={completedCount}
+              totalCount={totalCount}
+              progressPct={progressPct}
+            />
+          </ErrorBoundary>
         ) : (
         <>
         <div style={{ background: "linear-gradient(120deg, #1E3A8A 0%, #2563EB 50%, #7C3AED 100%)", borderRadius: 24, padding: "36px 40px", marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 8px 32px rgba(37,99,235,0.35)", position: "relative", overflow: "hidden" }}>
