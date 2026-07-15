@@ -107,41 +107,6 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-// in_cabin_at (ISO) → minutes since midnight for today, or null.
-function inCabinAtMinutes(inCabinAt) {
-  if (!inCabinAt) return null;
-  const d = new Date(inCabinAt);
-  if (isNaN(d.getTime())) return null;
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-// Effective end (minutes since midnight) for an "In Cabin" appointment, honouring
-// early admits: min(in_cabin_at + booked duration, original booked clock end).
-// Falls back to booked end / start+duration when in_cabin_at is absent, so old
-// rows behave exactly as before. Must match MDDashboard's identical helper so
-// both auto-engines agree. `fallbackDur` is the default duration (10 min here).
-function effectiveInCabinEndMin(appt, extraMin = 0, fallbackDur = 10) {
-  const startMin = parseTimeToMinutes(appt.appointment_time);
-  const durMin   = appt.appointment_duration ? Number(appt.appointment_duration) : null;
-
-  const storedEnd = parseTimeToMinutes(appt.appointment_end_time);
-  const byDuration = startMin !== null ? startMin + (durMin || fallbackDur) : null;
-  const bookedEnd = (storedEnd !== null && storedEnd >= 0)
-    ? storedEnd
-    : byDuration;
-
-  const admitMin = inCabinAtMinutes(appt.in_cabin_at);
-  const admitEnd = admitMin !== null ? admitMin + (durMin || fallbackDur) : null;
-
-  let end;
-  if (admitEnd !== null && bookedEnd !== null) end = Math.min(admitEnd, bookedEnd);
-  else if (admitEnd !== null)                  end = admitEnd;
-  else                                         end = bookedEnd;
-
-  if (end === null || end < 0) return null;
-  return end + (extraMin || 0);
-}
-
 // ─── CSV / Excel Export ───────────────────────────────────────────────────────
 
 function exportCSV(appointments) {
@@ -333,13 +298,7 @@ export default function Appointments() {
   const [editAppt, setEditAppt]     = useState(null); // appointment being edited
   const [deleteAppt, setDeleteAppt] = useState(null); // appointment pending delete confirm
 
-  // Track which appointment IDs the auto-engine has already transitioned
-  // so we don't fire duplicate updates on every tick
-  const autoTransitionedRef = useRef(new Set());
-
   useEffect(() => {
-    // Reset transition tracking whenever the date changes
-    autoTransitionedRef.current = new Set();
     fetchAppointments();
     fetchMeetings();
   }, [selectedDate]);
@@ -379,99 +338,14 @@ export default function Appointments() {
     setExecutiveMeetings(data ?? []);
   }, [selectedDate]);
 
-  // ── Auto-status engine ────────────────────────────────────────────────────
-  // Runs every 30 seconds when viewing today.
-  // Waiting  → In Cabin  : when current time >= appointment_time
-  // In Cabin → Completed : when current time >= appointment_end_time
-  //                        (falls back to appointment_time + duration or +10 min)
-  useEffect(() => {
-    async function runAutoEngine() {
-      // Only auto-advance for today's appointments
-      if (selectedDate !== todayStr()) return;
-
-      const now = nowMinutes();
-      const toTransition = [];
-
-      // ── Pass 1: auto-END — complete anyone whose time is finished ──────────
-      let cabinOccupied = false;
-      for (const appt of appointments) {
-        if (appt.status !== "In Cabin") continue;
-
-        // Effective end honours early admits: booked duration from in_cabin_at,
-        // capped at the original booked clock end. Falls back to stored end /
-        // start+duration when in_cabin_at is absent. Matches MDDashboard exactly.
-        const endMin = effectiveInCabinEndMin(appt);
-
-        const key = `${appt.id}-${appt.status}`;
-        if (endMin !== null && now >= endMin && !autoTransitionedRef.current.has(key)) {
-          toTransition.push({ appt, newStatus: "Completed", key });
-        } else {
-          cabinOccupied = true; // will still be in the cabin after this tick
-        }
-      }
-
-      // ── Pass 2: auto-APPROVE — admit the next due citizen (one at a time,
-      //    only when the cabin is free — same rule as the manual button) ─────
-      if (!cabinOccupied) {
-        const due = appointments
-          .filter(a => a.status === "Waiting")
-          .map(a => ({ a, start: parseTimeToMinutes(a.appointment_time) }))
-          .filter(x => x.start !== null && now >= x.start)
-          .sort((x, y) => x.start - y.start);
-
-        if (due.length > 0) {
-          const next = due[0].a;
-          const key = `${next.id}-${next.status}`;
-          if (!autoTransitionedRef.current.has(key)) {
-            toTransition.push({ appt: next, newStatus: "In Cabin", key });
-          }
-        }
-      }
-
-      if (toTransition.length === 0) return;
-
-      for (const { appt, newStatus, key } of toTransition) {
-        autoTransitionedRef.current.add(key);
-
-        const updatePayload = { status: newStatus };
-        if (newStatus === "In Cabin") updatePayload.in_cabin_at = new Date().toISOString();
-        const { error } = await supabase
-          .from("appointments")
-          .update(updatePayload)
-          .eq("id", appt.id);
-
-        if (error) {
-          console.error("[AutoEngine] status update failed:", error);
-          autoTransitionedRef.current.delete(key); // allow retry
-          continue;
-        }
-
-        // Sync calendar on auto transitions (same as manual status changes)
-        if ((newStatus === "Completed" || newStatus === "In Cabin") && appt.google_event_id) {
-          syncCalendarUpdate({
-            google_event_id:      appt.google_event_id,
-            appointment_id:       appt.appointment_id,
-            citizen_name:         appt.citizen_name,
-            purpose:              appt.purpose,
-            appointment_date:     appt.appointment_date,
-            appointment_time:     appt.appointment_time,
-            appointment_end_time: appt.appointment_end_time,
-            appointment_duration: appt.appointment_duration,
-            officer_name:         appt.officer_name,
-            mobile:               appt.mobile,
-            location:             appt.location,
-          }).catch(e => console.error("[AutoEngine] calendar sync:", e));
-        }
-      }
-
-      // Refresh to reflect new statuses
-      if (toTransition.length > 0) fetchAppointments();
-    }
-
-    runAutoEngine();
-    const interval = setInterval(runAutoEngine, 30_000);
-    return () => clearInterval(interval);
-  }, [appointments, selectedDate, fetchAppointments]);
+  // ── Auto-status engine: REMOVED ───────────────────────────────────────────
+  // Status changes are fully MANUAL now. Staff click Approve (→ In Cabin), then
+  // Complete or No Show. Nothing advances on a timer any more.
+  //
+  // NOTE: `in_cabin_at` is still stamped when a citizen is approved (see
+  // updateStatus below). The MD dashboard uses it to show the live timer and to
+  // raise its time-over prompt, measured from the APPROVAL moment rather than
+  // the booked slot time.
 
   // ── Manual status update (staff override) ────────────────────────────────
   const updateStatus = async (appointment, newStatus) => {
@@ -895,16 +769,20 @@ export default function Appointments() {
                     <td style={styles.td}>
                       <div style={styles.actionBtns}>
                         {a.status === "Waiting" && (
-                          <button
-                            onClick={() => updateStatus(a, "In Cabin")}
-                            style={{
-                              ...styles.actionBtnBlue,
-                              opacity: cabinCitizen ? 0.4 : 1,
-                              cursor: cabinCitizen ? "not-allowed" : "pointer",
-                            }}
-                            disabled={!!cabinCitizen}
-                            title={cabinCitizen ? "Please complete current citizen first." : "Approve"}
-                          >Approve</button>
+                          <>
+                            <button
+                              onClick={() => updateStatus(a, "In Cabin")}
+                              style={{
+                                ...styles.actionBtnBlue,
+                                opacity: cabinCitizen ? 0.4 : 1,
+                                cursor: cabinCitizen ? "not-allowed" : "pointer",
+                              }}
+                              disabled={!!cabinCitizen}
+                              title={cabinCitizen ? "Please complete current citizen first." : "Approve"}
+                            >Approve</button>
+                            {/* Citizen never turned up — mark No Show without admitting. */}
+                            <button onClick={() => updateStatus(a, "No Show")} style={styles.actionBtnRed} title="No Show">No Show</button>
+                          </>
                         )}
                         {a.status === "In Cabin" && (
                           <>
