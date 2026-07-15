@@ -1925,6 +1925,9 @@ export default function MDDashboard({ onLogout }) {
   // ── Stat card list popup (Total Citizens / Waiting / Meetings / Completed) ─
   const [statPanel, setStatPanel] = useState(null); // 'citizens' | 'waiting' | 'meetings' | 'completed' | null
 
+  // ── Cancelling a meeting from its card (small "Cancel" button) ────────────
+  const [cancellingMeetingId, setCancellingMeetingId] = useState(null);
+
   // ── Executive Meetings section — independent date browsing ────────────────
   // Kept separate from `timelineDate` so switching the date here does not
   // affect the chronological Schedule/Timeline section below it.
@@ -2526,6 +2529,41 @@ export default function MDDashboard({ onLogout }) {
     fetchAll();
   };
 
+  // Cancels a meeting straight from its card (small "✕ Cancel" button) —
+  // asks for a quick confirmation first since this can't be undone from here.
+  const handleCancelMeeting = async (meeting) => {
+    if (!meeting?.id || cancellingMeetingId) return;
+    const ok = window.confirm(`Cancel "${meeting.title}"?\n\nThis will mark the meeting as cancelled. This can't be undone from here.`);
+    if (!ok) return;
+
+    setCancellingMeetingId(meeting.id);
+    const { error } = await supabase
+      .from("executive_meetings")
+      .update({ status: "Cancelled" })
+      .eq("id", meeting.id);
+
+    if (error) {
+      console.error("[MDDashboard] cancel meeting error:", error);
+      alert("Failed to cancel: " + error.message);
+      setCancellingMeetingId(null);
+      return;
+    }
+
+    // Remove from calendar (non-blocking) — same behaviour as the staff portal.
+    if (meeting.google_event_id) {
+      syncCalendarDelete({
+        google_event_id: meeting.google_event_id,
+        appointment_id:  `MTG-${meeting.id}`,
+      }).catch(e => console.error("[MDDashboard] calendar delete failed:", e));
+    }
+
+    // Refresh every view that could be showing this meeting.
+    await fetchAll();
+    await fetchMeetingsForDate(meetingsSectionDate);
+    if (timelineDate) fetchTimeline(timelineDate);
+    setCancellingMeetingId(null);
+  };
+
   // If Staff changes the in-cabin citizen's status away (e.g., to Completed) via
   // realtime, any open time-over popup for them is no longer relevant — close it.
   useEffect(() => {
@@ -2846,6 +2884,8 @@ export default function MDDashboard({ onLogout }) {
               completedCount={completedCount}
               totalCount={totalCount}
               progressPct={progressPct}
+              onCancelMeeting={handleCancelMeeting}
+              cancellingMeetingId={cancellingMeetingId}
             />
           </ErrorBoundary>
         ) : (
@@ -3066,10 +3106,27 @@ export default function MDDashboard({ onLogout }) {
                           <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" style={{ display: "block", background: "#fff", color: "#059669", border: "1px solid #A7F3D0", padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Open Meet Link</a>
                         )}
                       </div>
-                    ) : linkValid ? (
-                      <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" className="join-btn" style={{ display: "block", background: "linear-gradient(135deg,#10B981,#059669)", color: "white", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", boxShadow: "0 4px 12px rgba(16,185,129,0.35)", width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Join Meeting</a>
                     ) : (
-                      <button disabled style={{ background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", opacity: 0.7 }}>🚫 No Meeting Link</button>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {linkValid ? (
+                          <a href={meeting.meet_link} target="_blank" rel="noopener noreferrer" className="join-btn" style={{ display: "block", background: "linear-gradient(135deg,#10B981,#059669)", color: "white", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", boxShadow: "0 4px 12px rgba(16,185,129,0.35)", width: "100%", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>🔗 Join Meeting</a>
+                        ) : (
+                          <button disabled style={{ background: "#E5E7EB", color: "#9CA3AF", border: "none", padding: "11px 22px", borderRadius: 12, cursor: "not-allowed", fontSize: 13, fontWeight: 700, width: "100%", opacity: 0.7 }}>🚫 No Meeting Link</button>
+                        )}
+                        <button
+                          onClick={() => handleCancelMeeting(meeting)}
+                          disabled={cancellingMeetingId === meeting.id}
+                          style={{
+                            background: "#fff", color: "#DC2626", border: "1px solid #FECACA",
+                            padding: "7px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                            width: "100%", textAlign: "center", boxSizing: "border-box",
+                            cursor: cancellingMeetingId === meeting.id ? "not-allowed" : "pointer",
+                            opacity: cancellingMeetingId === meeting.id ? 0.6 : 1,
+                          }}
+                        >
+                          {cancellingMeetingId === meeting.id ? "Cancelling…" : "✕ Cancel Meeting"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
@@ -3362,6 +3419,7 @@ function MobileDashboard({
   greeting, appointments, meetings, tourDiary,
   currentCitizen, waitingCitizens, nextCitizen,
   completedCount, totalCount, progressPct,
+  onCancelMeeting, cancellingMeetingId,
 }) {
   const [activeTab, setActiveTab] = useState("home");
 
@@ -3628,12 +3686,31 @@ function MobileDashboard({
                         </a>
                       )}
                     </div>
-                  ) : linkValid ? (
-                    <a href={m.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", textDecoration:"none", padding:"11px 0", borderRadius:12, textAlign:"center", fontSize:14, fontWeight:700, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" }}>
-                      🔗 Join Meeting
-                    </a>
                   ) : (
-                    <div style={{ background:"#F3F4F6", borderRadius:12, padding:"10px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:600 }}>🚫 No meeting link</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                      {linkValid ? (
+                        <a href={m.meet_link} target="_blank" rel="noopener noreferrer" style={{ display:"block", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", textDecoration:"none", padding:"11px 0", borderRadius:12, textAlign:"center", fontSize:14, fontWeight:700, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" }}>
+                          🔗 Join Meeting
+                        </a>
+                      ) : (
+                        <div style={{ background:"#F3F4F6", borderRadius:12, padding:"10px 0", textAlign:"center", color:"#9CA3AF", fontSize:13, fontWeight:600 }}>🚫 No meeting link</div>
+                      )}
+                      {onCancelMeeting && (
+                        <button
+                          onClick={() => onCancelMeeting(m)}
+                          disabled={cancellingMeetingId === m.id}
+                          style={{
+                            background:"#fff", color:"#DC2626", border:"1px solid #FECACA",
+                            padding:"8px 0", borderRadius:10, fontSize:12, fontWeight:700,
+                            width:"100%", textAlign:"center",
+                            cursor: cancellingMeetingId === m.id ? "not-allowed" : "pointer",
+                            opacity: cancellingMeetingId === m.id ? 0.6 : 1,
+                          }}
+                        >
+                          {cancellingMeetingId === m.id ? "Cancelling…" : "✕ Cancel Meeting"}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );
