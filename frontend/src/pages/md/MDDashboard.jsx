@@ -422,6 +422,11 @@ function Popup({ data, onComplete, onClose }) {
 
           {isInCabin && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8FAFC", borderRadius: 10, padding: "10px 14px" }}>
+                <span style={{ fontSize: 16 }}>{isStaffBooking(data) ? "🏛" : "👤"}</span>
+                <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600, minWidth: 110 }}>Meeting With</span>
+                <BookingForBadge appt={data} />
+              </div>
               <InfoRow icon="📋" label="Purpose"        value={data.purpose} />
               <InfoRow icon="⏱" label="Duration"       value={data.appointment_duration ? `${data.appointment_duration} min` : "—"} />
               <InfoRow icon="🎫" label="Appointment ID" value={data.appointment_id} />
@@ -462,6 +467,35 @@ function InfoRow({ icon, label, value }) {
   );
 }
 
+// Shows whether an appointment is with a STAFF member or a CITIZEN.
+// Reads appointments.booking_for ("Staff" | "Citizen"); anything else (including
+// legacy rows created before the column existed) is treated as a Citizen.
+function isStaffBooking(appt) {
+  return String(appt?.booking_for || "").toLowerCase() === "staff";
+}
+
+function BookingForBadge({ appt, size = "md" }) {
+  const staff = isStaffBooking(appt);
+  const small = size === "sm";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: staff ? "#F5F3FF" : "#EFF6FF",
+      color:      staff ? "#6D28D9" : "#2563EB",
+      border:     `1px solid ${staff ? "#DDD6FE" : "#BFDBFE"}`,
+      borderRadius: 99,
+      padding: small ? "1px 7px" : "3px 10px",
+      fontSize: small ? 10 : 11,
+      fontWeight: 800,
+      letterSpacing: "0.03em",
+      whiteSpace: "nowrap",
+      flexShrink: 0,
+    }}>
+      {staff ? "🏛 Staff" : "👤 Citizen"}
+    </span>
+  );
+}
+
 const popupStyles = {
   overlay:      { position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   box:          { background: "#fff", borderRadius: 20, width: "100%", maxWidth: 460, boxShadow: "0 24px 64px rgba(0,0,0,0.25)", overflow: "hidden" },
@@ -478,7 +512,7 @@ function TodayTimeline({ appointments, meetings, isToday = true }) {
   const events = [];
 
   appointments.forEach(a => {
-    events.push({ type: "appointment", time: a.appointment_time, endTime: a.appointment_end_time, minutes: parseTimeToMinutes(a.appointment_time), label: a.citizen_name, sub: a.purpose, status: a.status, duration: a.appointment_duration, id: a.appointment_id });
+    events.push({ type: "appointment", time: a.appointment_time, endTime: a.appointment_end_time, minutes: parseTimeToMinutes(a.appointment_time), label: isStaffBooking(a) ? `🏛 ${a.citizen_name}` : a.citizen_name, sub: a.purpose, status: a.status, duration: a.appointment_duration, id: a.appointment_id });
   });
 
   meetings.forEach(m => {
@@ -1865,7 +1899,10 @@ function StatListPopup({ type, appointments, meetings, onClose }) {
                 return (
                   <div key={row.appointment_id ?? i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 14px", gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.citizen_name}</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.citizen_name}</p>
+                        <BookingForBadge appt={row} size="sm" />
+                      </div>
                       <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.purpose}</p>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -2238,17 +2275,11 @@ export default function MDDashboard({ onLogout }) {
   const waitingSorted   = sortByTime(appointments.filter(a => a.status === "Waiting"), "appointment_time");
   const nextInQueue     = waitingSorted[0] || null;
 
-  // Fired by the live countdown the instant a citizen's time reaches zero.
-  const handleCitizenTimeOver = useCallback((citizen) => {
-    if (!citizen) return;
-    const key = `timeover-${citizen.id ?? citizen.appointment_id}`;
-    // Prevent duplicates + don't re-show after a handled refresh.
-    if (handledTimeOverRef.current.has(key)) return;
-    setTimeOverPopup(prev => {
-      if (prev) return prev; // only ever one popup at a time
-      return { ...citizen, _key: key };
-    });
-  }, []);
+  // Time-over popup: DISABLED.
+  // Citizens now auto-complete the instant their approved time runs out (see the
+  // auto-COMPLETE engine below), so there is no prompt to raise. Kept as a no-op
+  // so the countdown's onExpire callback stays harmless.
+  const handleCitizenTimeOver = useCallback(() => {}, []);
 
   // ── "Now in cabin" arrival notice ─────────────────────────────────────────
   // Statuses are manual now, so the moment staff approve someone the MD should
@@ -2276,6 +2307,7 @@ export default function MDDashboard({ onLogout }) {
       purpose: c.purpose,
       appointment_id: c.appointment_id,
       appointment_duration: c.appointment_duration,
+      booking_for: c.booking_for,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentInCabin?.id]);
@@ -2394,13 +2426,80 @@ export default function MDDashboard({ onLogout }) {
     fetchAll();
   };
 
-  // ── Citizen auto-status engine: REMOVED ───────────────────────────────────
-  // Citizen statuses are fully MANUAL now (staff Approve → Complete / No Show).
-  // Nothing advances a citizen on a timer. The meeting auto-complete below is
-  // unrelated and still runs.
+  // ── Citizen auto-COMPLETE engine (approval-driven) ────────────────────────
+  // Approving stays MANUAL. Once a citizen is "In Cabin", their session runs for
+  // their booked duration measured from the APPROVAL moment (in_cabin_at) — not
+  // their booked slot time — and they auto-complete the instant it runs out.
+  // Mirrors the Appointments-page engine so both agree; whichever screen is open
+  // performs the update, and the ref stops it firing twice.
   //
-  // AUTO_END_GRACE_MIN is retained because the meeting auto-complete uses it.
-  const AUTO_END_GRACE_MIN = 2;
+  // Timestamp maths (not minutes-since-midnight) so a session crossing midnight
+  // can't wrap and complete early.
+  const AUTO_END_GRACE_MIN = 2; // retained: the meeting auto-complete below uses it
+  const citizenAutoCompleteRef = useRef(new Set());
+
+  useEffect(() => {
+    async function runCitizenAutoComplete() {
+      const now = Date.now();
+      const due = [];
+
+      for (const appt of appointments) {
+        if (appt.status !== "In Cabin") continue;
+        if (!appt.in_cabin_at) continue;
+
+        const admit = new Date(appt.in_cabin_at).getTime();
+        if (isNaN(admit)) continue;
+
+        // Honour a local ⏱ extend that hasn't round-tripped to Supabase yet.
+        const extraMin = extensions[appt.id ?? appt.appointment_id] || 0;
+        const durMs = ((Number(appt.appointment_duration) || 5) + extraMin) * 60000;
+        const endMs = admit + durMs;
+
+        const key = String(appt.id);
+        if (now >= endMs && !citizenAutoCompleteRef.current.has(key)) {
+          due.push({ appt, key });
+        }
+      }
+
+      if (due.length === 0) return;
+
+      for (const { appt, key } of due) {
+        citizenAutoCompleteRef.current.add(key);
+        const { error } = await supabase
+          .from("appointments")
+          .update({ status: "Completed" })
+          .eq("id", appt.id);
+        if (error) {
+          console.error("[MDDashboard AutoComplete] failed:", error);
+          citizenAutoCompleteRef.current.delete(key); // retry next tick
+          continue;
+        }
+
+        if (appt.google_event_id) {
+          syncCalendarUpdate({
+            google_event_id:      appt.google_event_id,
+            appointment_id:       appt.appointment_id,
+            citizen_name:         appt.citizen_name,
+            purpose:              appt.purpose,
+            appointment_date:     appt.appointment_date,
+            appointment_time:     appt.appointment_time,
+            appointment_end_time: appt.appointment_end_time,
+            appointment_duration: appt.appointment_duration,
+            officer_name:         appt.officer_name,
+            mobile:               appt.mobile,
+            location:             appt.location,
+          }).catch(e => console.error("[MDDashboard AutoComplete] calendar sync:", e));
+        }
+      }
+
+      fetchAll();
+    }
+
+    runCitizenAutoComplete();
+    const t = setInterval(runCitizenAutoComplete, 10000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments, extensions]);
 
   // ── Auto-complete engine for EXECUTIVE MEETINGS ───────────────────────────
   // Appointments have an auto-END engine; meetings previously did not, so a past
@@ -2604,11 +2703,14 @@ export default function MDDashboard({ onLogout }) {
   const renderCitizenInCabin = (compact = false) => (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <div style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: "50%", background: "linear-gradient(135deg,#DBEAFE,#EFF6FF)", border: "2px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: compact ? 15 : 18, fontWeight: 700, color: "#2563EB", flexShrink: 0 }}>
+        <div style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: "50%", background: isStaffBooking(currentCitizen) ? "linear-gradient(135deg,#EDE9FE,#F5F3FF)" : "linear-gradient(135deg,#DBEAFE,#EFF6FF)", border: `2px solid ${isStaffBooking(currentCitizen) ? "#DDD6FE" : "#BFDBFE"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: compact ? 15 : 18, fontWeight: 700, color: isStaffBooking(currentCitizen) ? "#6D28D9" : "#2563EB", flexShrink: 0 }}>
           {currentCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
         </div>
         <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: compact ? 16 : 20, fontWeight: 800, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentCitizen.citizen_name}</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0, fontSize: compact ? 16 : 20, fontWeight: 800, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentCitizen.citizen_name}</h2>
+            <BookingForBadge appt={currentCitizen} size={compact ? "sm" : "md"} />
+          </div>
           <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentCitizen.purpose}</p>
         </div>
       </div>
@@ -2662,18 +2764,7 @@ export default function MDDashboard({ onLogout }) {
         </ErrorBoundary>
       )}
 
-      {timeOverPopup && (
-        <ErrorBoundary fallback={null}>
-          <CitizenTimeOverPopup
-            data={timeOverPopup}
-            hasNext={!!nextInQueue}
-            onCompleted={handleTimeOverCompleted}
-            onNext={handleTimeOverNext}
-            onExtend={handleTimeOverExtend}
-            onDismiss={handleTimeOverDismiss}
-          />
-        </ErrorBoundary>
-      )}
+      {/* Time-over popup removed — citizens auto-complete at 0:00. */}
 
       {showScheduleAdd && (
         <ErrorBoundary fallback={null}>
@@ -2900,7 +2991,10 @@ export default function MDDashboard({ onLogout }) {
                     {nextCitizen.citizen_name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>{nextCitizen.citizen_name}</h2>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>{nextCitizen.citizen_name}</h2>
+                      <BookingForBadge appt={nextCitizen} />
+                    </div>
                     <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280" }}>{nextCitizen.purpose}</p>
                   </div>
                 </div>
