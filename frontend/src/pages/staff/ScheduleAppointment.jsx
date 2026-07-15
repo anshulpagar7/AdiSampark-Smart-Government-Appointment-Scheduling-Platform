@@ -2,102 +2,24 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
 import { syncCalendarCreate } from "../../lib/calendarSync";
+import {
+  DURATION_OPTIONS,
+  SLOT_GROUPS,
+  ALL_SLOTS,
+  slotToMinutes,
+  minutesToSlotStr,
+  getOccupiedSlots,
+} from "../../lib/staffSlots";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED SLOT ENGINE  (identical to CitizenBooking — do not diverge)
+// SHARED SLOT ENGINE
+// Slot range, lunch break and occupancy rules live in ../../lib/staffSlots so the
+// Walk-In page and the Appointments reschedule modal can never drift apart.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const DURATION_OPTIONS = [5, 10, 15, 20, 25];
-
-// ── Staff slot range (extra privilege) ────────────────────────────────────────
-// Staff can schedule across the full office day: 10:00 AM → 8:00 PM in 5-minute
-// slots. Last slot STARTS 7:55 PM (ends 8:00 PM). A lunch break mirrors the
-// citizen booking: the morning ends at 1:20 PM and the afternoon resumes 2:30 PM
-// (1:25–2:25 PM is not bookable). getOccupiedSlots already forbids an
-// appointment from spanning the morning/afternoon boundary.
-const STAFF_START_MIN   = 10 * 60;        // 10:00 AM
-const STAFF_END_MIN     = 20 * 60;        // 8:00 PM (exclusive — last start is 7:55)
-const LUNCH_START_MIN   = 13 * 60 + 25;   // 1:25 PM — first non-bookable minute
-const LUNCH_END_MIN     = 14 * 60 + 30;   // 2:30 PM — afternoon resumes
-
-function minutesToSlotStr(min) {
-  let h = Math.floor(min / 60);
-  const m = min % 60;
-  const suffix = h < 12 ? "AM" : "PM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
-}
-
-// Build 5-minute slots, skipping the lunch window, grouped into rows of 5 within
-// each section so the grid renders in neat blocks (like the citizen version).
-function buildStaffSlotGroups() {
-  const groups = [];
-  let row = [];
-  let rowSection = null;
-
-  const flushRow = () => {
-    if (row.length > 0) { groups.push({ section: rowSection, slots: row }); row = []; }
-  };
-
-  for (let min = STAFF_START_MIN; min < STAFF_END_MIN; min += 5) {
-    // Skip the lunch window entirely.
-    if (min >= LUNCH_START_MIN && min < LUNCH_END_MIN) continue;
-
-    const section = min < LUNCH_START_MIN ? "morning" : "afternoon";
-    // Start a fresh row when the section changes or the row is full (5 per row).
-    if (section !== rowSection || row.length === 5) {
-      flushRow();
-      rowSection = section;
-    }
-    row.push(minutesToSlotStr(min));
-  }
-  flushRow();
-  return groups;
-}
-
-const SLOT_GROUPS = buildStaffSlotGroups();
-
-const ALL_SLOTS = SLOT_GROUPS.flatMap(g => g.slots);
-
-function slotToMinutes(slotStr) {
-  const d = new Date(`1970-01-01 ${slotStr}`);
-  return d.getHours() * 60 + d.getMinutes();
-}
 
 /** Returns the end-time string for a given start slot + duration, e.g. "12:20 PM" */
 function computeEndTime(startSlot, durationMinutes) {
-  const startMin = slotToMinutes(startSlot);
-  const endMin   = startMin + durationMinutes;
-  const h = Math.floor(endMin / 60);
-  const m = endMin % 60;
-  const suffix = h < 12 ? "AM" : "PM";
-  const h12    = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${suffix}`;
-}
-
-/** Returns array of slot strings the appointment occupies, or null if it crosses
- *  a break (lunch) or runs past the last slot. Validity = the occupied slots are
- *  time-contiguous (each exactly 5 minutes after the previous). This naturally
- *  allows an appointment to span multiple visual rows within one session, while
- *  still forbidding it from jumping the lunch gap or off the end of the day. */
-function getOccupiedSlots(startSlot, durationMinutes) {
-  const slotsNeeded = durationMinutes / 5;
-  const startIdx = ALL_SLOTS.indexOf(startSlot);
-  if (startIdx === -1) return null;
-
-  const occupied = [];
-  for (let i = 0; i < slotsNeeded; i++) {
-    const idx = startIdx + i;
-    if (idx >= ALL_SLOTS.length) return null;
-    occupied.push(ALL_SLOTS[idx]);
-  }
-
-  // Every consecutive pair must be exactly 5 minutes apart. A gap (e.g. the
-  // lunch break, where the next listed slot is 65 min later) makes it invalid.
-  for (let i = 1; i < occupied.length; i++) {
-    if (slotToMinutes(occupied[i]) - slotToMinutes(occupied[i - 1]) !== 5) return null;
-  }
-  return occupied;
+  return minutesToSlotStr(slotToMinutes(startSlot) + durationMinutes);
 }
 
 /** Expand booked appointments into a Set of all occupied slot strings. */
@@ -306,7 +228,7 @@ function SlotGrid({ occupiedSet, vcBlockedSet, selectedSlot, setSelectedSlot, du
 export default function ScheduleAppointment() {
   const [form, setForm] = useState({
     name: "", mobile: "", purpose: "", officer: "",
-    date: "", location: "",
+    date: "", location: "", booking_for: "Citizen",
   });
   const [duration, setDuration]     = useState(5);
   const [selectedSlot, setSelectedSlot] = useState("");
@@ -434,7 +356,8 @@ export default function ScheduleAppointment() {
     const e = {};
     if (!form.name.trim())                               e.name    = "Name is required";
     if (!form.mobile.trim() || !/^\d{10}$/.test(form.mobile)) e.mobile = "Enter a valid 10-digit mobile number";
-    if (!form.purpose.trim())                            e.purpose = "Please enter a purpose";
+    if (!form.purpose)                                   e.purpose = "Please select a purpose";
+    if (!form.booking_for)                               e.booking_for = "Please select who this is for";
     if (!form.officer)                                   e.officer = "Please select an officer";
     if (!form.date)                                      e.date    = "Please select a date";
     if (!selectedSlot)                                   e.slot    = "Please select a time slot";
@@ -493,6 +416,7 @@ export default function ScheduleAppointment() {
       location:             form.location,
       status:               "Waiting",
       booking_source:       "Walk-In",
+      booking_for:          form.booking_for || "Citizen",
     }]).select().single();
     setSaving(false);
 
@@ -526,7 +450,7 @@ export default function ScheduleAppointment() {
         officer_name:         form.officer,
         location:             form.location,
         mobile:               form.mobile,
-        notes:                null,
+        notes:                form.booking_for === "Staff" ? "Booking type: Staff" : null,
       });
 
       if (calResult?.google_event_id) {
@@ -624,10 +548,19 @@ export default function ScheduleAppointment() {
               <input name="mobile" value={form.mobile} onChange={handleChange} placeholder="10-digit mobile number" maxLength={10}
                 style={{ ...styles.input, borderColor: errors.mobile ? "#FCA5A5" : "#E2E8F0" }} />
             </Field>
+            <Field label="Booking For" required error={errors.booking_for}>
+              <select name="booking_for" value={form.booking_for} onChange={handleChange}
+                style={{ ...styles.input, borderColor: errors.booking_for ? "#FCA5A5" : "#E2E8F0" }}>
+                <option value="Citizen">👤 Citizen</option>
+                <option value="Staff">🏛 Staff</option>
+              </select>
+            </Field>
             <Field label="Purpose of Visit" required error={errors.purpose}>
-              <input name="purpose" value={form.purpose} onChange={handleChange}
-                placeholder="Type purpose of visit…"
-                style={{ ...styles.input, borderColor: errors.purpose ? "#FCA5A5" : "#E2E8F0" }} />
+              <select name="purpose" value={form.purpose} onChange={handleChange}
+                style={{ ...styles.input, borderColor: errors.purpose ? "#FCA5A5" : "#E2E8F0" }}>
+                <option value="">Select purpose</option>
+                {["Scholarship","Education","Employment","Certificate","Complaint","Other"].map(p => <option key={p}>{p}</option>)}
+              </select>
             </Field>
             <Field label="Assign Officer" required error={errors.officer}>
               <select name="officer" value={form.officer} onChange={handleChange}
