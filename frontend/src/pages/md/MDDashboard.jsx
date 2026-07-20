@@ -134,6 +134,18 @@ function nowMinutes() {
   return n.getHours() * 60 + n.getMinutes();
 }
 
+// DISPLAY-ONLY 24-hour formatter. Stored values keep their original format
+// ("hh:mm AM/PM" from citizen booking, "HH:mm" from the newer meeting forms) so
+// Google Calendar sync and all parsers stay untouched; this converts anything
+// to "HH:mm" purely for display.
+function fmt24(timeStr) {
+  if (!timeStr) return "";
+  const mins = parseTimeToMinutes(timeStr);
+  if (mins === null || isNaN(mins)) return String(timeStr).trim();
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
+
 // Convert an in_cabin_at timestamp (ISO string) into minutes-since-midnight
 // for TODAY. Returns null if absent or not parseable.
 function inCabinAtMinutes(inCabinAt) {
@@ -359,7 +371,7 @@ function Popup({ data, onComplete, onClose }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <InfoRow icon="🏛️" label="Meeting With"  value={meetingData.meeting_with || "—"} />
                   <InfoRow icon="🕐" label="Scheduled At"  value={meetingData.meeting_time || "—"} />
-                  {meetingData.meeting_end_time && <InfoRow icon="⏱" label="Ends At" value={meetingData.meeting_end_time} />}
+                  {meetingData.meeting_end_time && <InfoRow icon="⏱" label="Ends At" value={fmt24(meetingData.meeting_end_time)} />}
                   {meetingData.notes && <InfoRow icon="📝" label="Notes" value={meetingData.notes} />}
                 </div>
               </div>
@@ -374,7 +386,7 @@ function Popup({ data, onComplete, onClose }) {
                       <div key={c.id ?? i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
                         <span style={{ fontWeight: 700, color: "#111827" }}>{c.title}</span>
                         <span style={{ fontWeight: 700, color: "#7C3AED", flexShrink: 0 }}>
-                          {c.meeting_time}{c.meeting_end_time ? ` – ${c.meeting_end_time}` : ""}
+                          {fmt24(c.meeting_time)}{c.meeting_end_time ? ` – ${fmt24(c.meeting_end_time)}` : ""}
                         </span>
                       </div>
                     ))}
@@ -436,7 +448,7 @@ function Popup({ data, onComplete, onClose }) {
           {!isBreak && !isMeeting && !isConflict && !isInCabin && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <InfoRow icon="📋" label="Purpose"        value={data.purpose} />
-              <InfoRow icon="🕐" label="Scheduled Time" value={`${data.appointment_time}${data.appointment_end_time ? ` – ${data.appointment_end_time}` : ""}`} />
+              <InfoRow icon="🕐" label="Scheduled Time" value={`${fmt24(data.appointment_time)}${data.appointment_end_time ? ` – ${fmt24(data.appointment_end_time)}` : ""}`} />
               <InfoRow icon="🎫" label="Appointment ID"  value={data.appointment_id} />
             </div>
           )}
@@ -605,7 +617,7 @@ function TodayTimeline({ appointments, meetings, isToday = true }) {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-            {ev.endTime && <span style={{ fontSize: 10, color: "#6B7280", whiteSpace: "nowrap" }}>→ {ev.endTime?.replace(" PM","").replace(" AM","")}</span>}
+            {ev.endTime && <span style={{ fontSize: 10, color: "#6B7280", whiteSpace: "nowrap" }}>→ {fmt24(ev.endTime)}</span>}
             {ev.duration && <span style={{ fontSize: 10, fontWeight: 700, color: cfg.dot, background: "#fff", padding: "2px 8px", borderRadius: 99, border: `1px solid ${cfg.border}` }}>{ev.duration} min</span>}
             {ev.status && <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[ev.status] || "#6B7280" }}>{ev.status}</span>}
           </div>
@@ -628,7 +640,7 @@ function TodayTimeline({ appointments, meetings, isToday = true }) {
           <div key={cIdx} style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
             <div style={{ width: 80, flexShrink: 0, paddingTop: 18, textAlign: "right", paddingRight: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: isPast ? "#9CA3AF" : "#374151", whiteSpace: "nowrap" }}>
-                {lead.time?.replace(" PM","").replace(" AM","") || ""}
+                {fmt24(lead.time) || ""}
               </span>
             </div>
             <div style={{ width: 24, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20 }}>
@@ -1575,7 +1587,7 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>
-                            {m.meeting_time}{m.meeting_end_time ? ` – ${m.meeting_end_time}` : ""}
+                            {fmt24(m.meeting_time)}{m.meeting_end_time ? ` – ${fmt24(m.meeting_end_time)}` : ""}
                           </p>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "#7C3AED", background: "#EDE9FE", padding: "2px 8px", borderRadius: 10 }}>{m.status || "Upcoming"}</span>
                         </div>
@@ -1599,7 +1611,7 @@ function ScheduleAddModal({ defaultDate, onClose, onSaved }) {
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: "#2563EB" }}>
-                            {a.appointment_time}{a.appointment_end_time ? ` – ${a.appointment_end_time}` : ""}
+                            {fmt24(a.appointment_time)}{a.appointment_end_time ? ` – ${fmt24(a.appointment_end_time)}` : ""}
                           </p>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "#D97706", background: "#FEF3C7", padding: "2px 8px", borderRadius: 10 }}>{a.status}</span>
                         </div>
@@ -1889,7 +1901,7 @@ function StatListPopup({ type, appointments, meetings, onClose }) {
                         <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>with {row.meeting_with || "—"}</p>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#059669" }}>{row.meeting_time}</p>
+                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#059669" }}>{fmt24(row.meeting_time)}</p>
                         <span style={{ fontSize: 10, fontWeight: 700, color: "#6B7280" }}>{effStatus}</span>
                       </div>
                     </div>
@@ -1906,7 +1918,7 @@ function StatListPopup({ type, appointments, meetings, onClose }) {
                       <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.purpose}</p>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#374151" }}>{row.appointment_time}</p>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#374151" }}>{fmt24(row.appointment_time)}</p>
                       <span style={{ fontSize: 10, fontWeight: 700, color: sc.color, background: sc.bg, padding: "1px 8px", borderRadius: 99 }}>{row.status}</span>
                     </div>
                   </div>
@@ -2715,8 +2727,8 @@ export default function MDDashboard({ onLogout }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #BFDBFE" }}>🕐 {currentCitizen.appointment_time}</span>
-        {currentCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {currentCitizen.appointment_end_time}</span>}
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #BFDBFE" }}>🕐 {fmt24(currentCitizen.appointment_time)}</span>
+        {currentCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {fmt24(currentCitizen.appointment_end_time)}</span>}
         {currentCitizen.appointment_duration && <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
       </div>
       <ErrorBoundary fallback={null}>
@@ -2743,8 +2755,8 @@ export default function MDDashboard({ onLogout }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>🕐 {ongoingVc.meeting_time}</span>
-        {ongoingVc.meeting_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {ongoingVc.meeting_end_time}</span>}
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>🕐 {fmt24(ongoingVc.meeting_time)}</span>
+        {ongoingVc.meeting_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {fmt24(ongoingVc.meeting_end_time)}</span>}
         <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#EDE9FE", padding: "4px 10px", borderRadius: 99, border: "1px solid #C4B5FD" }}>Ongoing VC</span>
       </div>
       {isMeetLinkValid(ongoingVc.meet_link) ? (
@@ -2999,8 +3011,8 @@ export default function MDDashboard({ onLogout }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>🕐 {nextCitizen.appointment_time}</span>
-                  {nextCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {nextCitizen.appointment_end_time}</span>}
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: 99, border: "1px solid #A7F3D0" }}>🕐 {fmt24(nextCitizen.appointment_time)}</span>
+                  {nextCitizen.appointment_end_time && <span style={{ fontSize: 12, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #DDD6FE" }}>→ {fmt24(nextCitizen.appointment_end_time)}</span>}
                   {nextCitizen.appointment_duration && <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 10px", borderRadius: 99, border: "1px solid #BFDBFE" }}>⏱ {nextCitizen.appointment_duration} min</span>}
                 </div>
                 <div style={{ background: "linear-gradient(135deg,#ECFDF5,#D1FAE5)", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3111,7 +3123,7 @@ export default function MDDashboard({ onLogout }) {
                         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#6B7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>{getMeetingTimeLabel(meeting.meeting_time)}</p>
                         <h3 style={{ margin: "4px 0 0", fontSize: 17, fontWeight: 800, color: "#111827" }}>{meeting.title}</h3>
                       </div>
-                      <span style={{ background: "#fff", color: "#2563EB", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 99, border: "1px solid #BFDBFE", flexShrink: 0, marginLeft: 10 }}>{meeting.meeting_time}</span>
+                      <span style={{ background: "#fff", color: "#2563EB", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 99, border: "1px solid #BFDBFE", flexShrink: 0, marginLeft: 10 }}>{fmt24(meeting.meeting_time)}</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>🏛️</span><span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{meeting.meeting_with}</span></div>
@@ -3426,7 +3438,7 @@ export default function MDDashboard({ onLogout }) {
                       <td style={td}><span style={{ background: "#F3F4F6", color: "#374151", fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 8 }}>{citizen.purpose}</span></td>
                       <td style={td}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7280" }}>
-                          🕐 {citizen.appointment_time}{citizen.appointment_end_time ? ` → ${citizen.appointment_end_time}` : ""}
+                          🕐 {fmt24(citizen.appointment_time)}{citizen.appointment_end_time ? ` → ${fmt24(citizen.appointment_end_time)}` : ""}
                         </span>
                       </td>
                       <td style={{ ...td, paddingRight: 14 }}>
@@ -3573,7 +3585,7 @@ function MobileDashboard({
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  <span style={{ fontSize:12, fontWeight:600, color:"#2563EB", background:"#EFF6FF", padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE" }}>🕐 {currentCitizen.appointment_time}</span>
+                  <span style={{ fontSize:12, fontWeight:600, color:"#2563EB", background:"#EFF6FF", padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE" }}>🕐 {fmt24(currentCitizen.appointment_time)}</span>
                   {currentCitizen.appointment_duration && <span style={{ fontSize:12, fontWeight:600, color:"#059669", background:"#ECFDF5", padding:"4px 10px", borderRadius:99, border:"1px solid #A7F3D0" }}>⏱ {currentCitizen.appointment_duration} min</span>}
                   <span style={{ fontSize:12, fontWeight:700, color:"#1E3A8A", background:"#EFF6FF", padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE" }}>#{currentCitizen.appointment_id}</span>
                 </div>
@@ -3585,7 +3597,7 @@ function MobileDashboard({
                       <div style={{ width:38, height:38, borderRadius:"50%", background:"linear-gradient(135deg,#EDE9FE,#F5F3FF)", border:"2px solid #DDD6FE", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>🎥</div>
                       <div style={{ minWidth:0 }}>
                         <p style={{ margin:0, fontSize:14, fontWeight:800, color:"#111827", overflow:"hidden", textOverflow:"ellipsis", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{ongoingVc.title}</p>
-                        <p style={{ margin:0, fontSize:11, color:"#6B7280" }}>{ongoingVc.meeting_time}{ongoingVc.meeting_end_time ? ` → ${ongoingVc.meeting_end_time}` : ""}</p>
+                        <p style={{ margin:0, fontSize:11, color:"#6B7280" }}>{fmt24(ongoingVc.meeting_time)}{ongoingVc.meeting_end_time ? ` → ${fmt24(ongoingVc.meeting_end_time)}` : ""}</p>
                       </div>
                     </div>
                     {isMeetLinkValid(ongoingVc.meet_link) && (
@@ -3604,8 +3616,8 @@ function MobileDashboard({
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom: isMeetLinkValid(ongoingVc.meet_link) ? 10 : 0 }}>
-                  <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>🕐 {ongoingVc.meeting_time}</span>
-                  {ongoingVc.meeting_end_time && <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>→ {ongoingVc.meeting_end_time}</span>}
+                  <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>🕐 {fmt24(ongoingVc.meeting_time)}</span>
+                  {ongoingVc.meeting_end_time && <span style={{ fontSize:12, fontWeight:600, color:"#7C3AED", background:"#F5F3FF", padding:"4px 10px", borderRadius:99, border:"1px solid #DDD6FE" }}>→ {fmt24(ongoingVc.meeting_end_time)}</span>}
                   <span style={{ fontSize:12, fontWeight:700, color:"#7C3AED", background:"#EDE9FE", padding:"4px 10px", borderRadius:99, border:"1px solid #C4B5FD" }}>Ongoing VC</span>
                 </div>
                 {isMeetLinkValid(ongoingVc.meet_link) && (
@@ -3630,7 +3642,7 @@ function MobileDashboard({
                 </div>
                 <div>
                   <p style={{ margin:0, fontSize:15, fontWeight:800, color:"#111827" }}>{nextCitizen.citizen_name}</p>
-                  <p style={{ margin:0, fontSize:12, color:"#6B7280" }}>{nextCitizen.purpose} · {nextCitizen.appointment_time}</p>
+                  <p style={{ margin:0, fontSize:12, color:"#6B7280" }}>{nextCitizen.purpose} · {fmt24(nextCitizen.appointment_time)}</p>
                 </div>
                 <span style={{ marginLeft:"auto", fontSize:14, fontWeight:900, color:"#10B981" }}>#{nextCitizen.appointment_id}</span>
               </div>
@@ -3663,7 +3675,7 @@ function MobileDashboard({
                     <p style={{ margin:0, fontSize:12, color:"#6B7280", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.purpose}</p>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
-                    <span style={{ fontSize:12, fontWeight:700, color:"#374151" }}>🕐 {c.appointment_time}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:"#374151" }}>🕐 {fmt24(c.appointment_time)}</span>
                     <span style={{ fontSize:11, fontWeight:700, color:sc.color, background:sc.bg, padding:"2px 8px", borderRadius:99 }}>{c.status}</span>
                   </div>
                 </div>
@@ -3700,7 +3712,7 @@ function MobileDashboard({
                       <p style={{ margin:"0 0 2px", fontSize:11, fontWeight:700, color:"#6B7280", textTransform:"uppercase", letterSpacing:"0.06em" }}>{getMeetingTimeLabel(m.meeting_time)}</p>
                       <h4 style={{ margin:0, fontSize:16, fontWeight:800, color:"#111827" }}>{m.title}</h4>
                     </div>
-                    <span style={{ background:"#EFF6FF", color:"#2563EB", fontSize:13, fontWeight:700, padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE", flexShrink:0, marginLeft:10 }}>{m.meeting_time}</span>
+                    <span style={{ background:"#EFF6FF", color:"#2563EB", fontSize:13, fontWeight:700, padding:"4px 10px", borderRadius:99, border:"1px solid #BFDBFE", flexShrink:0, marginLeft:10 }}>{fmt24(m.meeting_time)}</span>
                   </div>
                   <p style={{ margin:"0 0 8px", fontSize:13, color:"#374151" }}>🏛️ {m.meeting_with}</p>
                   <span style={{ display:"inline-block", marginBottom:6, fontSize:12, fontWeight:700, color:mSc.color, background:mSc.bg, border:`1px solid ${mSc.border}`, padding:"2px 10px", borderRadius:99 }}>{effStatus}</span>
