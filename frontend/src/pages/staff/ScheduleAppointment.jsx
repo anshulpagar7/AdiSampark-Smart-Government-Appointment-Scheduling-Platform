@@ -22,6 +22,16 @@ function computeEndTime(startSlot, durationMinutes) {
   return minutesToSlotStr(slotToMinutes(startSlot) + durationMinutes);
 }
 
+// DISPLAY-ONLY 24-hour formatter. Stored slot values stay "hh:mm AM/PM" so the
+// Google Calendar sync and every downstream parser keep working; this only
+// changes what staff see on screen.
+function fmt24(timeStr) {
+  if (!timeStr) return "";
+  const mins = slotToMinutes(timeStr);
+  if (mins < 0) return String(timeStr).trim();
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
 /** Expand booked appointments into a Set of all occupied slot strings. */
 function buildOccupiedSet(bookedAppointments) {
   const occupied = new Set();
@@ -170,7 +180,7 @@ function SlotGrid({ occupiedSet, vcBlockedSet, selectedSlot, setSelectedSlot, du
                     minHeight:48,
                   }}
                 >
-                  {slotStr.replace(" PM","").replace(" AM","")}
+                  {fmt24(slotStr)}
                   {sublabel}
                 </button>
               );
@@ -187,7 +197,7 @@ function SlotGrid({ occupiedSet, vcBlockedSet, selectedSlot, setSelectedSlot, du
       {visibleMorning && (
         <div style={{ marginBottom: 20 }}>
           <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:"0.08em" }}>
-            ☀️ Morning Session — 10:00 AM to 1:20 PM
+            ☀️ Morning Session — 10:00 to 13:20
           </p>
           {renderGroup(morningGroups)}
         </div>
@@ -208,7 +218,7 @@ function SlotGrid({ occupiedSet, vcBlockedSet, selectedSlot, setSelectedSlot, du
       {visibleAfternoon && (
         <div style={{ marginBottom: 8 }}>
           <p style={{ margin:"0 0 10px", fontSize:11, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:"0.08em" }}>
-            🌤 Afternoon Session — 2:30 PM to 8:00 PM
+            🌤 Afternoon Session — 14:30 to 20:00
           </p>
           {renderGroup(afternoonGroups)}
         </div>
@@ -498,7 +508,7 @@ export default function ScheduleAppointment() {
               <SummaryRow icon="📋" label="Purpose"    value={form.purpose} />
               <SummaryRow icon="🏛️" label="Officer"   value={form.officer} />
               <SummaryRow icon="📅" label="Date"       value={form.date} />
-              <SummaryRow icon="🕐" label="Time"       value={`${selectedSlot} – ${computeEndTime(selectedSlot, duration)}`} />
+              <SummaryRow icon="🕐" label="Time"       value={`${fmt24(selectedSlot)} – ${fmt24(computeEndTime(selectedSlot, duration))}`} />
               <SummaryRow icon="⏱" label="Duration"   value={`${duration} Minutes`} />
               {form.location && <SummaryRow icon="📍" label="Location" value={form.location} />}
               <SummaryRow icon="🚶" label="Source"     value="Walk-In" />
@@ -717,8 +727,8 @@ export default function ScheduleAppointment() {
                 <PreviewRow label="Officer"  value={form.officer  || "—"} />
                 <PreviewRow label="Date"     value={form.date     || "—"} />
                 <PreviewRow label="Duration" value={`${duration} min`} />
-                <PreviewRow label="Start"    value={selectedSlot  || "—"} />
-                <PreviewRow label="End"      value={endTime        || "—"} />
+                <PreviewRow label="Start"    value={selectedSlot ? fmt24(selectedSlot) : "—"} />
+                <PreviewRow label="End"      value={endTime ? fmt24(endTime) : "—"} />
                 <PreviewRow label="Location" value={form.location || "—"} />
                 <PreviewRow label="Source"   value="Walk-In" />
               </div>
