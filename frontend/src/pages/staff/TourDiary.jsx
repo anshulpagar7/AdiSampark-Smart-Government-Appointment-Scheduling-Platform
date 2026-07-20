@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRealtime } from "../../hooks/useRealtime";
 import { syncCalendarCreate, syncCalendarUpdate, syncCalendarDelete } from "../../lib/calendarSync";
@@ -184,8 +184,45 @@ export default function TourDiary() {
       .select("*")
       .order("start_date", { ascending: false });
     if (error) { console.error("[TourDiary] fetch error:", error); }
-    else setTours(data || []);
+    else {
+      setTours(data || []);
+      syncStatuses(data || []);
+    }
     setLoading(false);
+  }
+
+  // ── Automatic status sync ─────────────────────────────────────────────────
+  // The UI always *computes* status from dates, but the stored DB status used to
+  // go stale (a finished tour still read "Upcoming" in the table, so other
+  // screens like the MD dashboard showed it wrong). This writes the computed
+  // status back whenever it differs. Cancelled is respected and never changed.
+  const syncedStatusRef = useRef(new Set());
+  async function syncStatuses(list) {
+    const stale = (list || []).filter(t => {
+      if (!t?.id) return false;
+      if (t.status === "Cancelled") return false;
+      const computed = computeStatus(t.start_date, t.end_date, t.status);
+      const key = `${t.id}:${computed}`;
+      return computed !== t.status && !syncedStatusRef.current.has(key);
+    });
+    if (stale.length === 0) return;
+
+    for (const t of stale) {
+      const computed = computeStatus(t.start_date, t.end_date, t.status);
+      const key = `${t.id}:${computed}`;
+      syncedStatusRef.current.add(key);
+      const { error } = await supabase
+        .from("tour_diary")
+        .update({ status: computed })
+        .eq("id", t.id);
+      if (error) {
+        console.error("[TourDiary] status sync failed:", error);
+        syncedStatusRef.current.delete(key); // retry on next fetch
+      }
+    }
+    // Refresh local state so the table reflects the corrected rows.
+    const { data } = await supabase.from("tour_diary").select("*").order("start_date", { ascending: false });
+    if (data) setTours(data);
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────
