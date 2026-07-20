@@ -53,6 +53,19 @@ function minutesToSlot(totalMin) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+// DISPLAY-ONLY 24-hour formatter. Stored values stay "hh:mm AM/PM" (so Google
+// Calendar sync and every existing parser keep working unchanged); this converts
+// them to "HH:mm" purely for what the citizen sees on screen.
+function fmt24(timeStr) {
+  if (!timeStr) return "";
+  const mins = slotToMinutes(timeStr);
+  if (mins < 0) {
+    // Already 24h or unknown — show as-is.
+    return String(timeStr).trim();
+  }
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
 /** "12:00 PM" + 10 → "12:10 PM" (same format ScheduleAppointment stores) */
 function computeEndTime(startSlot, durationMinutes) {
   const start = slotToMinutes(startSlot);
@@ -1358,7 +1371,7 @@ export default function CitizenBooking() {
               <span style={conf.rowIcon}>🕐</span>
               <div>
                 <p style={conf.rowLabel}>{t.time}</p>
-                <p style={conf.rowValue}>{selectedSlot} — {appointmentDuration} minutes</p>
+                <p style={conf.rowValue}>{fmt24(selectedSlot)} — {appointmentDuration} minutes</p>
               </div>
             </div>
             <div style={conf.divider} />
@@ -1404,7 +1417,7 @@ export default function CitizenBooking() {
           </div>
 
           <a
-            href={`https://wa.me/?text=My appointment at MSTDCL is confirmed. Token: ${appointmentId}. Time: ${selectedSlot} (${appointmentDuration} min) on ${displayDate}.`}
+            href={`https://wa.me/?text=My appointment at MSTDCL is confirmed. Token: ${appointmentId}. Time: ${fmt24(selectedSlot)} (${appointmentDuration} min) on ${displayDate}.`}
             target="_blank"
             rel="noopener noreferrer"
             style={conf.whatsapp}
@@ -1545,7 +1558,7 @@ function SlotRow({ slots, selectedSlot, setSelectedSlot, getSlotStatus, selected
               opacity, transform: scale, transition: "all 0.15s", boxShadow: shadow, minHeight: 52,
             }}
           >
-            {slotStr.replace(" PM","").replace(" AM","")}
+            {fmt24(slotStr)}
             {sublabel}
           </button>
         );
